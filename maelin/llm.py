@@ -10,8 +10,19 @@ import os
 def adjudicate(plans, goal="minimize customer disruption"):
     if not plans:
         return {"mode":"no_safe_plan","selected_index":None,"explanation":"No fully covering candidate found."}
-    deterministic = {"mode":"deterministic_policy","selected_index":0,
-        "explanation":"Lowest combined synthetic impact, execution cost and prior-failure penalty."}
+    # Operators can ask for fewer independent changes. The deterministic
+    # baseline honors that goal within a narrow safety/cost envelope instead
+    # of silently ignoring the UI's priority selector when LLM is disabled.
+    eligible = [(i, plan) for i, plan in enumerate(plans)
+                if plan["score"] <= plans[0]["score"] + 4
+                and plan["disruption_cost"] <= plans[0]["disruption_cost"]]
+    prefer_fewer = "fewest" in goal.lower() or "fewer changes" in goal.lower()
+    choice = (min(eligible, key=lambda x: (len(x[1]["action_ids"]), x[1]["score"], x[0]))[0]
+              if prefer_fewer and eligible else 0)
+    deterministic = {"mode":"deterministic_policy","selected_index":choice,
+        "explanation":("Fewest changes within four score units of the minimum, without increasing modeled customer disruption."
+                       if prefer_fewer else
+                       "Lowest combined synthetic impact, execution cost and prior-failure penalty.")}
     if not os.getenv("OPENAI_API_KEY") or os.getenv("MAELIN_USE_LLM")!="1":
         return deterministic
     try:
@@ -45,5 +56,5 @@ def adjudicate(plans, goal="minimize customer disruption"):
         return {"mode":"llm_tool_choice_validated","selected_index":chosen,
                 "explanation":str(args.get("reason", ""))[:400]}
     except Exception as exc:
-        return {"mode":"llm_unavailable_policy_fallback","selected_index":0,
+        return {"mode":"llm_unavailable_policy_fallback","selected_index":deterministic["selected_index"],
                 "explanation":f"Model step unavailable ({type(exc).__name__}); safe deterministic policy used."}
