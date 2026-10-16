@@ -34,3 +34,6 @@ No official scoring rubric or winning likelihood is asserted. User-visible simul
 
 - Commit `430deb4`: full real FalkorDB tests and self-cleaning judge harness both passed, with `maelin-dual-track-evidence` artifact.
 - Commit `2a894b8`: FalkorDB/agent tests and the judge harness passed, then a browser test assertion failed because it looked for an internal action ID where the UI intentionally displays a human-readable label. Browser regression test corrected in the next revision. Real browser journey remains a required passing gate before release to `main`.
+
+- Commit `a5bce17`: full GitHub Actions **42 passed, 1 warning** against real FalkorDB, plus self-cleaning judge harness and full Chrome browser E2E (cold graph, real graph clone replay, memory change, injected shadow route). Two artifacts uploaded: `maelin-dual-track-evidence` and `maelin-real-browser-proof`. Verified run: https://github.com/vivekyarra/Graph/actions/runs/38929417346 .
+- Final visual refinement turns agent ledger raw JSON into human-readable Recon → Memory → Remediation explanations with expandable immutable evidence. Must pass CI on the final visual revision too.

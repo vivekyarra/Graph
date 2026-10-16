@@ -91,6 +91,8 @@ def test_ui_exposes_memory_ablation_and_evidence_disclaimer():
     assert 'Without memory' in ui and 'With memory' in ui
     assert 'reports are not independent forensic proof' in ui
     assert 'operatorToken' in ui
+    assert 'handoffSummary' in ui
+    assert 'Inspect immutable graph handoff evidence' in ui
 
 
 def test_operator_goal_is_respected_without_optional_llm(monkeypatch):
