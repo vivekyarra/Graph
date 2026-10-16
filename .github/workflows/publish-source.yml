@@ -1,0 +1,75 @@
+name: Expand Maelin tested source and verify on FalkorDB
+on:
+  push:
+    branches: [feature/maelin-hardening]
+    paths: [bundle/READY]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore source from checked-in reproducible snapshot
+        run: |
+          python -m pip install brotli
+          python - <<'PY'
+          import base64, brotli, hashlib, json
+          from pathlib import Path
+          parts = sorted(Path("bundle").glob("part*.txt"))
+          assert len(parts) == 6, "Incomplete source upload"
+          raw = base64.b64decode("".join(p.read_text() for p in parts), validate=True)
+          assert hashlib.sha256(raw).hexdigest() == "49e1c1d5b00604b569641b17b524233cf6e31f6b280c7ce0bce5d74ed193c770"
+          files = json.loads(brotli.decompress(raw))
+          assert len(files)==25
+          for name, content in files.items():
+              path=Path(name)
+              assert not path.is_absolute() and ".." not in path.parts
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(content, encoding="utf-8")
+          print("Restored", len(files), "source files")
+          PY
+      - name: Commit unpacked code to feature branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/ maelin/ tests/ data/ static/ Dockerfile docker-compose.yml requirements*.txt .gitignore
+          git diff --cached --quiet || git commit -m "feat: publish Maelin source and adversarial tests"
+          git push origin HEAD:feature/maelin-hardening
+      - name: Install application and test dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Start real FalkorDB
+        run: docker compose up -d graph
+      - name: Wait for real graph protocol
+        run: |
+          python - <<'PY'
+          import time
+          from falkordb import FalkorDB
+          db=FalkorDB(host="localhost", port=6379)
+          for attempt in range(60):
+              try:
+                  db.list_graphs()
+                  break
+              except Exception:
+                  if attempt==59: raise
+                  time.sleep(2)
+          PY
+      - name: Run offline and live-server adversarial suite
+        env:
+          FALKOR_INTEGRATION: '1'
+          FALKOR_HOST: localhost
+          FALKOR_PORT: '6379'
+        run: python -m pytest -q
+      - name: Show database logs on failure
+        if: failure()
+        run: docker compose logs --tail=150 graph
+      - name: Tear down disposable database
+        if: always()
+        run: docker compose down -v
