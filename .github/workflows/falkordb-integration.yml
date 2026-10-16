@@ -49,6 +49,24 @@ jobs:
         with:
           name: maelin-dual-track-evidence
           path: judge-proof.json
+      - name: Install real browser automation
+        run: |
+          python -m pip install playwright
+          python -m playwright install chromium --with-deps
+      - name: Boot Dockerized Maelin API and seed real FalkorDB demo tenants
+        run: |
+          docker compose up -d --build app
+          docker compose exec -T app python -m maelin.seed --tenant alpha
+          docker compose exec -T app python -m maelin.seed --tenant beta
+      - name: Replay the complete UI journey against real API and FalkorDB
+        run: python tests/e2e_real_browser.py
+      - name: Preserve real browser captures for judge review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maelin-real-browser-proof
+          path: browser_artifacts/
+          if-no-files-found: warn
       - name: Show graph container logs if CI fails
         if: failure()
         run: docker compose logs --tail=150 graph
