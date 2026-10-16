@@ -57,3 +57,7 @@ Check the `maelin-dual-track-evidence` artifact on the successful GitHub Actions
 **Not claimed:** a verified exploit, a quantified real business outage, a production security platform, autonomous cloud remediation, official judge scores, or any guarantee of winning.
 
 Official rules: https://www.wemakedevs.org/hackathons/falkordb/rules
+
+## UI priority-policy proof
+
+The user-facing "Prefer fewer changes" toggle must work in deterministic mode (no LLM credentials). Within four cost units of the lowest-risk plan and without increasing modeled customer disruption, the selector prefers the fewest independent interventions. It returns the selected plan index and human-readable policy explanation. Tests show a two-action surgical plan under continuity and a one-action credential rotation when fewer changes are requested. This policy does not expand the graph-derived containment envelope.

@@ -91,3 +91,18 @@ def test_ui_exposes_memory_ablation_and_evidence_disclaimer():
     assert 'Without memory' in ui and 'With memory' in ui
     assert 'reports are not independent forensic proof' in ui
     assert 'operatorToken' in ui
+
+
+def test_operator_goal_is_respected_without_optional_llm(monkeypatch):
+    from maelin.llm import adjudicate
+    monkeypatch.delenv('OPENAI_API_KEY',raising=False)
+    paths, biz = traversal_fallback(SCENE)
+    plans = analyze(paths,biz,SCENE['actions'])['plans']
+    continuity = adjudicate(plans,'Minimize customer disruption and remediation cost')
+    simplicity = adjudicate(plans,'Prefer the fewest independent changes while preserving customer service')
+    assert continuity['selected_index']==0
+    assert continuity['selected_index'] != simplicity['selected_index']
+    selected=plans[simplicity['selected_index']]
+    assert selected['action_ids']==['rotate-auth-credentials']
+    assert selected['disruption_cost']<=plans[0]['disruption_cost']
+    assert selected['score']<=plans[0]['score']+4

@@ -53,7 +53,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(650)
     page.locator('#newSession').click()
     page.wait_for_function("document.querySelector('#pathsCount').textContent.trim()==='3'")
-    assert 'invalidate-attacker-session' in page.locator('#plans').inner_text()
+    assert page.evaluate("current.analysis.recommended.action_ids.includes('invalidate-attacker-session')")
     page.screenshot(path=str(OUT/'04_topology_drift.png'),full_page=True)
     steps.append('Graph-derived topology drift: third threat path forces different plan')
     assert not page_errors, f'Unhandled JS errors: {page_errors}'
