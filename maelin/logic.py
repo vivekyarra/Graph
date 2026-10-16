@@ -5,6 +5,13 @@ consequences of candidate interventions on the graph-derived paths.
 """
 from __future__ import annotations
 from itertools import combinations
+from math import isfinite
+
+MAX_CANDIDATE_ACTIONS = 48  # 18,472 combinations of 1-3 actions, hard cap
+
+
+def _nonnegative_number(value):
+    return type(value) in (int, float) and isfinite(value) and value >= 0
 
 
 def analyze(paths, business_paths, actions, precedents=(), max_actions=3):
@@ -14,6 +21,19 @@ def analyze(paths, business_paths, actions, precedents=(), max_actions=3):
     business_paths: [{flow:str, value:int, nodes:[str]}] from another query.
     precedents: [{action_id:str, outcome:'unexpected_outage'|'safe', ...}]
     """
+    # Fail closed on invalid graph-derived action catalogs; never silently
+    # optimize a partial or ambiguous set of interventions.
+    if not (isinstance(max_actions, int) and 1 <= max_actions <= 3):
+        raise ValueError("max_actions must be between 1 and 3")
+    if len(actions) > MAX_CANDIDATE_ACTIONS:
+        raise OverflowError("Intervention catalog exceeds bounded optimization budget (48)")
+    ids = [a["id"] for a in actions]
+    if len(set(ids)) != len(ids):
+        raise ValueError("Duplicate intervention identifiers make the recommendation ambiguous")
+    if any(not _nonnegative_number(a["cost"]) for a in actions):
+        raise ValueError("Invalid intervention cost: require finite non-negative numbers")
+    if any(not _nonnegative_number(b["value"]) for b in business_paths):
+        raise ValueError("Invalid business-flow value: require finite non-negative numbers")
     if not paths:
         return {"plans": [], "recommended": None, "reason": "no_matching_threat_path"}
     bad = {}

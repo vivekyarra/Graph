@@ -69,3 +69,7 @@ Submission closes **October 18, 2026, 11:59 PM IST**. Official rules require pub
 - https://www.wemakedevs.org/blogs/how-to-build-an-agent-that-reasons-over-a-graph
 - https://www.falkordb.com/blog/memory-meets-motion-the-falkordb-standouts/
 - https://github.com/FalkorDB/falkordb-py
+
+## Mandatory v4 evidence insert (do not simulate this with a prerecorded fake)
+
+After recording the synthetic operator-report event, start a second session and place the **MEMORY CAUSAL TEST** evidence box on screen. Point at the same-topology comparison: **without memory** the surgical pair is preferred, **with memory** credential rotation wins. Explain explicitly that this demonstrates *dependence on prior graph-stored reports*, not proof that the reported outage happened. For a technical judge, execute `python -m maelin.judge --output judge-proof.json` against real FalkorDB and show the CI evidence artifact (see JUDGE_PACKET.md). That command additionally invalidates the old plan after controlled topology drift and cleans up its test graphs.

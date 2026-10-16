@@ -74,7 +74,10 @@ def health(tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
 
 
 @api.get("/api/graph")
-def graph(tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
+def graph(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
+    # Namespace isolation is not access control. Protect incident topologies
+    # in remote mode using the same operator boundary as graph writes.
+    require_operator(request)
     try:
         return store().topology(tenant)
     except Exception as e:
@@ -135,7 +138,8 @@ def outcome(req: Outcome, request: Request):
 
 
 @api.get("/api/trace/{session_id}")
-def trace(session_id:str, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
+def trace(session_id:str, request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
+    require_operator(request)
     try:
         return {"handoffs":store().history(tenant,session_id)}
     except Exception as e:

@@ -50,11 +50,13 @@ class Store:
         query = """MATCH p=(s:Asset {id:$source})-[:CAN_PIVOT*1..7]->(t:Asset {id:$target})
 WITH p WHERE ANY(n IN nodes(p) WHERE n.id = $vulnerable)
 RETURN [n IN nodes(p) | n.id] AS assets,
-       [r IN relationships(p) | r.edge_id] AS pivots LIMIT 257"""
+       [r IN relationships(p) | r.edge_id] AS pivots,
+       [r IN relationships(p) | r.evidence] AS edge_evidence LIMIT 257"""
         rows = g.ro_query(query, {"source":source,"vulnerable":vulnerable,"target":target}).result_set
         if len(rows) > 256:
             raise OverflowError("More than 256 candidate attack paths. No containment conclusion is safe.")
-        return [{"nodes":r[0],"edges":r[1]} for r in rows]
+        return [{"nodes":r[0],"edges":r[1],
+                 "edge_evidence":r[2] if len(r)>2 else []} for r in rows]
 
     def business_paths(self, tenant):
         g, _ = self.graphs(tenant)
@@ -150,7 +152,7 @@ RETURN a.action_id, a.outcome, a.cost_observed""",
 
     def inject_shadow_route(self, tenant):
         """Controlled synthetic fault injection. Never modifies cloud infrastructure."""
-        if tenant not in {"alpha", "beta", "ci_alpha", "ci_beta"}:
+        if tenant not in {"alpha", "beta", "ci_alpha", "ci_beta"} and not re.fullmatch(r"judge_[0-9a-f]{8}", tenant):
             raise ValueError("Synthetic fault injection is restricted to demo tenants")
         if not self.ready(tenant):
             raise LookupError("Seed the demo before injecting faults")

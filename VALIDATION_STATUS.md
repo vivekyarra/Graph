@@ -1,29 +1,30 @@
-# Validation status: precisely what was, and was not, tested
+# Maelin v4 validation register — 16 October 2026
 
-As of 2026-10-16, in the local authoring environment:
+The current code is intended for an official Graph Hacks **dual-track** entry:
+- Track 01: Agents That Act on Connected Data
+- Track 02: Agent Memory and Coordination
 
-| Gate | Status | Evidence |
-|---|---|---|
-| 5,000 seeded randomized optimizer/oracle comparisons | PASS | `tests/test_stress.py` |
-| Counterexamples for shorter benign path, incomplete intervention, business disruption, memory-reordered recommendation, drift | PASS | `tests/test_logic.py`, `tests/test_agents.py` |
-| Isolated graph-copy replay protocol, partial cut, node outage, drift and cleanup (fake driver) | PASS | `tests/test_simulation.py` |
-| Production code has no graph-less fallback | PASS (source invariant) | `tests/test_invariants.py` |
-| UI JavaScript parse | PASS | Node.js `vm.Script`; **not** a browser end-to-end test |
-| Real FalkorDB queries / Graph.copy / multi-tenant memory / graph DELETE and re-traversal / concurrent handoffs | **PASS in GitHub CI (2026-10-16)** | [First successful run](https://github.com/vivekyarra/Graph/actions/runs/38924960115), 30/30 including both live tests; subsequent expansion pending latest run |
-| Real Docker Compose fresh-machine startup | **NOT RUN** | Docker unavailable in this authoring environment |
-| GitHub Actions FalkorDB integration | **PASS (2026-10-16)** | [Run 38924960115](https://github.com/vivekyarra/Graph/actions/runs/38924960115); real FalkorDB launched, 30/30 green |
-| Public deployment and working video | **NOT DONE** | Participant action required |
+## Verified in local authoring environment
 
-**The GitHub run is a real database integration pass.** The authoring container still lacks Docker; clean-machine Docker Compose and the browser demo must be checked separately.
+- Python unit suite: **38 passed, 3 skipped** (3 real-FalkorDB cases gated on `FALKOR_INTEGRATION=1`).
+- Existing randomized optimizer/oracle suite: **5,000 cases** passed; explicit catalog cap at 48 interventions and maximum of 3 interventions per plan.
+- `python -m compileall` and `node --check` on the dashboard's JavaScript passed.
+- Graph authorization: remote-mode read graph and session trace APIs now require operator token; graph-mutating endpoints fail closed without token/local mode.
+- New controlled memory ablation: compares same topology and interventions with and without recalled reports and stores the comparison with the durable remediator handoff.
+- New graph provenance fields: attack-path edges include synthetic evidence annotations.
 
-## Clean-machine go/no-go steps
+## Gated for live CI on this revision
 
-1. `docker compose up --build -d` and inspect `docker compose logs --tail=100 graph app` for errors.
-2. `docker compose exec app python -m maelin.seed --tenant alpha`; repeat for beta. Only use `--reset` intentionally, because it destroys that tenant's existing graph state.
-3. `python -m pip install -r requirements-dev.txt -r requirements.txt` on your host.
-4. `FALKOR_INTEGRATION=1 python -m pytest -q` (PowerShell: `$env:FALKOR_INTEGRATION='1'; python -m pytest -q`). This must PASS, not skip.
-5. Open http://localhost:8000; carry out all video steps. Use browser DevTools to ensure no 500/503 errors, verify the sandbox replay creates no leftover `sim_` graph.
-6. Inspect FalkorDB Browser and verify stored memory/session edges in both tenants, and that a seeded Beta session has no Alpha memory.
-7. The project is already published on the development branch. After these checks, record the demo video and submit to both tracks.
+- Real FalkorDB live end-to-end Cypher traversals, simultaneous session handoffs, replay and cleanup, memory isolation, and drift.
+- New one-command judge harness: `python -m maelin.judge --output judge-proof.json`, which creates ephemeral synthetic tenant graphs and checks all track claims while deleting them.
+- CI evidence artifact `maelin-dual-track-evidence`, generated only after successful live run.
 
-Until the full demo and independent review pass, call this a **real-integration-tested dual-track prototype**, not a proven winning-grade build.
+Earlier v3 commits have had successful real FalkorDB CI runs. **This does not certify the current v4 change until its own job passes.**
+
+## Submission gates not yet fulfilled
+
+- Participant-led clean-machine UI+Docker smoke test and code review.
+- Public or unlisted real app demo video, actual recorded behavior (not mocked screenshot).
+- Verify registration, team information, consent to AI coding assistance disclosure, and submission on organizer's site by Oct 18 2026 23:59 IST.
+
+No official scoring rubric or winning likelihood is asserted. User-visible simulations are synthetic and cannot certify real-world security.

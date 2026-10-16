@@ -52,6 +52,22 @@ class RemediationAgent:
         precedent=memory["payload"]["recalled_experiences"]
         interventions = store.interventions(tenant)
         result = analyze(paths, business, interventions, precedent)
+        # Controlled ablation: same live graph and action catalog, with the
+        # recalled memory removed. This is a causal policy comparison, not a
+        # claim that the operator's report is independently verified.
+        cold_policy = analyze(paths, business, interventions, ())
+        cold = cold_policy["recommended"]
+        warm = result["recommended"]
+        result["memory_ablation"] = {
+            "without_memory_actions": cold["action_ids"] if cold else None,
+            "without_memory_score": cold["score"] if cold else None,
+            "with_memory_actions": warm["action_ids"] if warm else None,
+            "with_memory_score": warm["score"] if warm else None,
+            "recommendation_changed": bool(cold and warm and cold["action_ids"] != warm["action_ids"]),
+            "reports_considered": len(precedent),
+            "evidence_kind": "operator_report, not independent forensic verification",
+            "interpretation": "Same topology, same candidate set; only previous operator reports were removed.",
+        }
         naive = next((a for a in interventions if a["id"] == "quarantine-auth"), None)
         baseline = analyze(paths, business, [naive], ()) if naive else None
         result["naive_emergency_brake"] = baseline["recommended"] if baseline else None
@@ -62,7 +78,8 @@ class RemediationAgent:
         store.handoff(tenant, sid, self.name, "proposed", {
             "candidate_plans":len(result["plans"]),
             "recommended":result["recommended"]["action_ids"] if result["recommended"] else None,
-            "outcome":result["reason"],"agent_choice":result["agent_choice"]})
+            "outcome":result["reason"],"agent_choice":result["agent_choice"],
+            "memory_ablation":result["memory_ablation"]})
         return result
 
 

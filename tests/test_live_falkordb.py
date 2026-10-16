@@ -65,3 +65,17 @@ def test_real_concurrent_session_handoffs_are_tenant_scoped():
     assert len(ids)==12
     assert all(len(store.history(tenant,sid))==3 for sid in ids)
     assert all(r['analysis']['recommended'] is not None for r in sessions)
+
+
+def test_real_judge_story_is_reproducible_and_disposable():
+    """Run the ENTIRE judge story, including an ablation, on actual FalkorDB."""
+    from maelin.store import Store
+    from maelin.judge import run
+    store=Store(os.getenv('FALKOR_HOST','localhost'),os.getenv('FALKOR_PORT',6379),
+                os.getenv('FALKOR_PASSWORD'))
+    prior=set(store.db.list_graphs())
+    evidence=run(store)
+    assert evidence['initial_simulated_remaining_routes']==0
+    assert evidence['memory_ablation']['recommendation_changed']
+    assert evidence['old_plan_after_drift_remaining_routes']==1
+    assert set(store.db.list_graphs())==prior, 'Judge proof must clean all disposable graphs'

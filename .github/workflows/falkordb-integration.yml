@@ -38,6 +38,17 @@ jobs:
           FALKOR_HOST: localhost
           FALKOR_PORT: '6379'
         run: python -m pytest -q
+      - name: Reproduce both track proofs on disposable live FalkorDB graphs
+        env:
+          FALKOR_HOST: localhost
+          FALKOR_PORT: '6379'
+        run: python -m maelin.judge --output judge-proof.json
+      - name: Preserve machine-readable live evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maelin-dual-track-evidence
+          path: judge-proof.json
       - name: Show graph container logs if CI fails
         if: failure()
         run: docker compose logs --tail=150 graph

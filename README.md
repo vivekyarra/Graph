@@ -141,7 +141,7 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-Offline (available in the authoring environment) tests exercise the optimizer, a stand-in graph-store interface, and synthetic graph reachability. A separately written exhaustive oracle probes **5,000 random cases** to ensure the optimizer always matches the oracle's minimum cost, including when previous failures alter the score. The unit tests cannot establish that FalkorDB executes every Cypher pattern correctly.
+Offline (available in the authoring environment) tests exercise the optimizer, a stand-in graph-store interface, and synthetic graph reachability. A separately written exhaustive oracle probes **600 random cases** to ensure the optimizer always matches the oracle's minimum cost, including when previous failures alter the score. The unit tests cannot establish that FalkorDB executes every Cypher pattern correctly.
 
 For a real integration smoke test after Docker starts:
 
@@ -154,11 +154,11 @@ python -m pytest -q tests/test_live_falkordb.py
 # pip install -r requirements-dev.txt before running
 ```
 
-A GitHub Actions workflow at `.github/workflows/falkordb-integration.yml` starts a real FalkorDB service, runs all tests with `FALKOR_INTEGRATION=1`, emits failed-container logs, and tears down the service. **Real FalkorDB CI first passed on October 16, 2026:** [workflow run](https://github.com/vivekyarra/Graph/actions/runs/38924960115).
+A GitHub Actions workflow at `.github/workflows/falkordb-integration.yml` starts a real FalkorDB service, runs all tests with `FALKOR_INTEGRATION=1`, emits failed-container logs, and tears down the service. **This CI configuration is authored, not yet executed in a published repository.**
 
 The real smoke test creates only the dedicated `maelin_ci_alpha_*` and `maelin_ci_beta_*` graphs, clears those dedicated test graphs, verifies actual Cypher results, performs and cleans up database-native graph-copy intervention replays, persists handoffs and outcomes, verifies idempotency and tenant isolation, and injects a third path to invalidate a previously valid containment plan.
 
-**Verified as of October 16, 2026:** GitHub Actions started a real FalkorDB container and passed all **30 tests** on the first published branch revision, including both live-server tests. The expanded regression suite has additional API security and limit guards and 5,000 randomized oracle comparisons; see the latest CI run for its result. A browser demonstration and clean-machine full Compose deployment remain separate gates.
+**Current verified result in this package:** 24 offline tests passed, two live integration tests skipped because no FalkorDB server was available in the authoring environment. **No live FalkorDB Cypher correctness, Docker startup, or submission eligibility is claimed as tested yet.**
 
 ## How to demo it in ~3 minutes
 
@@ -176,9 +176,9 @@ The real smoke test creates only the dedicated `maelin_ci_alpha_*` and `maelin_c
 - Threat edges model *plausible* attacker transitions supplied by the synthetic dataset. They are not proofs that a real attacker has met preconditions. Real connectors, IAM semantics, and evidence provenance are future work.
 - The bounded Cypher query stops at 7 hops. 257+ threat paths or 1025+ business paths trigger refusal, but a path beyond the depth limit could still exist. **Do not infer actual safety from a negative result.**
 - Interventions are implemented as Cypher `DELETE` operations on an isolated FalkorDB graph clone, then verified by a fresh graph traversal; the clone is deleted. Scoring uses illustrative, uncalibrated impact units. The project does **not** execute real revocations, quarantines, or credential changes.
-- The `Inject shadow route` endpoint is enabled **only in the included trusted LOCAL Docker demo** using `MAELIN_ENABLE_DEMO_MUTATIONS=1`. Disable that variable in public deployments. There is **no production authentication**, approval queue, or protected public-tenant provisioning. Do not publish this API without access controls; anyone with access can report outcomes and change future rankings in this demo.
+- The `Inject shadow route` endpoint is enabled **only in the included trusted LOCAL Docker demo** using `MAELIN_ENABLE_DEMO_MUTATIONS=1`. Disable that variable in public deployments. Graph-writing APIs **fail closed by default**. The bundled Docker Compose binds all ports to `127.0.0.1` and explicitly sets `MAELIN_LOCAL_DEMO=1` to permit the local interactive demo. For any remote deployment unset `MAELIN_LOCAL_DEMO`, set a strong `MAELIN_OPERATOR_TOKEN`, disable `MAELIN_ENABLE_DEMO_MUTATIONS`, and terminate TLS at a trusted proxy. This is a prototype with a single operator token, not a complete production multi-user RBAC solution.
 - No benchmark against competing Graph Hacks entries exists; **no claim of winning is warranted yet**.
-- Real FalkorDB integration passed in GitHub Actions; full Docker app startup, browser user journeys, and optional-model behavior still require independent end-to-end verification.
+- Live FalkorDB test remains **mandatory** before submission; Docker and optional-model behavior were not end-to-end verified here.
 - AI coding assistance helped build this prototype. **Disclose this in the submission**; participants must review, test, and understand the code themselves.
 
 ## Submission compliance checklist
@@ -204,3 +204,10 @@ The real smoke test creates only the dedicated `maelin_ci_alpha_*` and `maelin_c
 - [Official FalkorDB MCP server](https://github.com/FalkorDB/falkordb-mcp)
 
 Copyright remains yours/your team’s under the hackathon rules; no external competitor's source code is copied into this project. Choose your preferred license before publishing.
+
+## Hardening notes (October 16)
+
+- Graph writes (including investigation session creation) now fail closed unless a matching `MAELIN_OPERATOR_TOKEN` header is supplied, or the explicitly local and loopback-bound `MAELIN_LOCAL_DEMO=1` configuration is used. Read-only endpoints remain accessible; do not expose unrestricted graph browsing in sensitive deployments.
+- `POST /api/outcome` treats the initial operator outcome per session/action as immutable: conflicting retries return HTTP 409 instead of falsely claiming the new value was saved. Matching retries are idempotent.
+- Local Compose binds FalkorDB and the demo web app to 127.0.0.1; do not bind Docker ports publicly or reuse local-demo overrides in deployed infrastructure.
+- Stored reports are operator assertions, never automatically verified forensic evidence. The source's synthetic impact numbers are illustrative.
