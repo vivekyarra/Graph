@@ -1,0 +1,229 @@
+{
+  "scenario": "Synthetic identity compromise / checkout protection",
+  "fingerprint": "exploited-identity-to-customer-db",
+  "source": "internet",
+  "vulnerable": "auth-service",
+  "target": "customer-db",
+  "assets": [
+    {
+      "id": "internet",
+      "kind": "ingress",
+      "x": 75,
+      "y": 220
+    },
+    {
+      "id": "edge-gateway",
+      "kind": "service",
+      "x": 235,
+      "y": 220
+    },
+    {
+      "id": "auth-service",
+      "kind": "service",
+      "x": 390,
+      "y": 220,
+      "critical": true
+    },
+    {
+      "id": "admin-role",
+      "kind": "identity",
+      "x": 565,
+      "y": 110
+    },
+    {
+      "id": "vault-sync",
+      "kind": "service",
+      "x": 565,
+      "y": 330
+    },
+    {
+      "id": "customer-db",
+      "kind": "database",
+      "x": 735,
+      "y": 220,
+      "critical": true
+    },
+    {
+      "id": "checkout",
+      "kind": "business_flow",
+      "value": 80,
+      "x": 370,
+      "y": 450
+    },
+    {
+      "id": "billing",
+      "kind": "business_flow",
+      "value": 45,
+      "x": 530,
+      "y": 450
+    },
+    {
+      "id": "sign-in",
+      "kind": "business_flow",
+      "value": 35,
+      "x": 210,
+      "y": 450
+    },
+    {
+      "id": "read-only-mirror",
+      "kind": "service",
+      "x": 690,
+      "y": 60
+    }
+  ],
+  "pivot_edges": [
+    {
+      "id": "p1",
+      "from": "internet",
+      "to": "edge-gateway",
+      "evidence": "synthetic internet exposure"
+    },
+    {
+      "id": "p2",
+      "from": "edge-gateway",
+      "to": "auth-service",
+      "evidence": "synthetic public API access"
+    },
+    {
+      "id": "p3",
+      "from": "auth-service",
+      "to": "admin-role",
+      "evidence": "synthetic assumed privilege"
+    },
+    {
+      "id": "p4",
+      "from": "admin-role",
+      "to": "customer-db",
+      "evidence": "synthetic database write permission"
+    },
+    {
+      "id": "p5",
+      "from": "auth-service",
+      "to": "vault-sync",
+      "evidence": "synthetic service credential pivot"
+    },
+    {
+      "id": "p6",
+      "from": "vault-sync",
+      "to": "customer-db",
+      "evidence": "synthetic sensitive replication permission"
+    },
+    {
+      "id": "p7",
+      "from": "edge-gateway",
+      "to": "read-only-mirror",
+      "evidence": "synthetic benign shortcut"
+    },
+    {
+      "id": "p8",
+      "from": "read-only-mirror",
+      "to": "customer-db",
+      "evidence": "synthetic read-only path without auth CVE"
+    }
+  ],
+  "depends_edges": [
+    {
+      "id": "d1",
+      "from": "checkout",
+      "to": "auth-service"
+    },
+    {
+      "id": "d2",
+      "from": "billing",
+      "to": "auth-service"
+    },
+    {
+      "id": "d3",
+      "from": "sign-in",
+      "to": "auth-service"
+    },
+    {
+      "id": "d4",
+      "from": "checkout",
+      "to": "edge-gateway"
+    },
+    {
+      "id": "d5",
+      "from": "billing",
+      "to": "vault-sync"
+    },
+    {
+      "id": "d6",
+      "from": "sign-in",
+      "to": "edge-gateway"
+    }
+  ],
+  "actions": [
+    {
+      "id": "quarantine-auth",
+      "label": "Quarantine auth-service",
+      "blocked_nodes": [
+        "auth-service"
+      ],
+      "blocked_edges": [],
+      "cost": 1,
+      "note": "Fast, but likely removes authentication for checkout and sign-in"
+    },
+    {
+      "id": "revoke-admin-role",
+      "label": "Revoke admin role assumption",
+      "blocked_nodes": [],
+      "blocked_edges": [
+        "p3"
+      ],
+      "cost": 2,
+      "note": "Cuts the privileged role path only"
+    },
+    {
+      "id": "block-vault-pivot",
+      "label": "Cut vault-sync pivot permission",
+      "blocked_nodes": [],
+      "blocked_edges": [
+        "p5"
+      ],
+      "cost": 3,
+      "note": "Cuts the backup exfiltration path only"
+    },
+    {
+      "id": "rotate-auth-credentials",
+      "label": "Rotate both leaked service credentials",
+      "blocked_nodes": [],
+      "blocked_edges": [
+        "p3",
+        "p5"
+      ],
+      "cost": 6,
+      "note": "Independent containment option, designed for minimal service downtime"
+    },
+    {
+      "id": "quarantine-gateway",
+      "label": "Quarantine edge-gateway",
+      "blocked_nodes": [
+        "edge-gateway"
+      ],
+      "blocked_edges": [],
+      "cost": 1,
+      "note": "Stops access but interrupts dependent customer flows"
+    },
+    {
+      "id": "disable-vault-sync",
+      "label": "Stop vault synchronization",
+      "blocked_nodes": [
+        "vault-sync"
+      ],
+      "blocked_edges": [],
+      "cost": 2,
+      "note": "Blocks one path and interrupts billing dependencies"
+    },
+    {
+      "id": "invalidate-attacker-session",
+      "label": "Invalidate compromised attacker session",
+      "blocked_nodes": [],
+      "blocked_edges": [
+        "p2"
+      ],
+      "cost": 12,
+      "note": "Contain the synthetic attack session before lateral movement; assumes session identity can be isolated"
+    }
+  ]
+}

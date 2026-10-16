@@ -1,0 +1,46 @@
+name: MAELIN real FalkorDB verification
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install test and FalkorDB clients
+        run: pip install -r requirements-dev.txt -r requirements.txt
+      - name: Start real FalkorDB, not a mock
+        run: docker compose up -d graph
+      - name: Wait for FalkorDB to accept protocol queries
+        run: |
+          python - <<'PY'
+          import time
+          from falkordb import FalkorDB
+          db=FalkorDB(host='localhost',port=6379)
+          for i in range(45):
+              try:
+                  db.list_graphs()
+                  print('FalkorDB is ready')
+                  break
+              except Exception:
+                  if i==44: raise
+                  time.sleep(2)
+          PY
+      - name: Test offline invariants and live graph copy, Cypher, memory isolation, replay
+        env:
+          FALKOR_INTEGRATION: '1'
+          FALKOR_HOST: localhost
+          FALKOR_PORT: '6379'
+        run: python -m pytest -q
+      - name: Show graph container logs if CI fails
+        if: failure()
+        run: docker compose logs --tail=150 graph
+      - name: Shut down containers
+        if: always()
+        run: docker compose down -v

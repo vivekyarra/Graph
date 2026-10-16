@@ -1,0 +1,23 @@
+services:
+  graph:
+    image: falkordb/falkordb:latest
+    ports:
+      - '127.0.0.1:6379:6379'
+      - '127.0.0.1:3000:3000'
+    volumes:
+      - graph-data:/data
+    restart: unless-stopped
+  app:
+    build: .
+    environment:
+      FALKOR_HOST: graph
+      FALKOR_PORT: '6379'
+      MAELIN_ENABLE_DEMO_MUTATIONS: '1' # trusted LOCAL demo only
+      MAELIN_LOCAL_DEMO: '1' # bypasses operator token only on localhost-bound Compose
+    ports:
+      - '127.0.0.1:8000:8000'
+    depends_on:
+      - graph
+    restart: unless-stopped
+volumes:
+  graph-data:
