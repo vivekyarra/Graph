@@ -24,7 +24,7 @@ def exhaustive_oracle(paths, business, actions, bad):
 
 def test_randomized_optimizer_agrees_with_independent_oracle():
     rng=Random(20261016)
-    for case in range(600):
+    for case in range(5000):
         n_routes=rng.randint(1,6)
         paths=[{'nodes':['internet',f'pivot-{i}','db'],
                 'edges':[f'x{i}']} for i in range(n_routes)]

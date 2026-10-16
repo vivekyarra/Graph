@@ -76,3 +76,44 @@ def test_memory_report_retry_idempotent_and_conflict_detected():
     with pytest.raises(ValueError,match='Conflicting'):
         store.record_outcome('alpha','session-1','different-fingerprint','cut-role','unexpected_outage',100,'poison')
     assert graph.writes==1
+
+
+def test_actual_api_routes_refuse_graph_writes_without_operator(monkeypatch):
+    """Exercise FastAPI request routing, not just the helper in isolation."""
+    from fastapi.testclient import TestClient
+    from maelin.api import api
+    monkeypatch.delenv('MAELIN_OPERATOR_TOKEN',raising=False)
+    monkeypatch.delenv('MAELIN_LOCAL_DEMO',raising=False)
+    with TestClient(api) as client:
+        scenarios = [
+            ('/api/investigate', {}),
+            ('/api/outcome', {'tenant':'alpha','session_id':'x','action_id':'a',
+                              'outcome':'unexpected_outage','cost_observed':10}),
+            ('/api/demo/simulate', {'tenant':'alpha','session_id':'x','action_ids':['a']}),
+            ('/api/demo/inject-shadow-route', {}),
+        ]
+        for path,body in scenarios:
+            response=client.post(path,json=body)
+            assert response.status_code==403, (path,response.status_code,response.text)
+
+
+def test_path_enumeration_refuses_truncation_instead_of_claiming_containment():
+    from maelin.store import Store
+    class ManyRows:
+        def ro_query(self, query,params=None):
+            return types.SimpleNamespace(result_set=[['s','t']] * 257)
+    instance=Store.__new__(Store)
+    instance.graphs=lambda tenant:(ManyRows(),None)
+    with pytest.raises(OverflowError,match='256'):
+        instance.attack_paths('alpha','s','v','t')
+
+
+def test_business_dependency_limit_refuses_loss_estimate():
+    from maelin.store import Store
+    class ManyRows:
+        def ro_query(self, query,params=None):
+            return types.SimpleNamespace(result_set=[['flow',10,['flow','asset']]] * 1025)
+    instance=Store.__new__(Store)
+    instance.graphs=lambda tenant:(ManyRows(),None)
+    with pytest.raises(OverflowError,match='exceeded limit'):
+        instance.business_paths('alpha')
