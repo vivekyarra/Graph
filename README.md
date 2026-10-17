@@ -1,7 +1,8 @@
 # Maelin — See what breaks before you fix it. Remember what happened last time.
 
 > **Graph Hacks Hackathon Submission** (WeMakeDevs × FalkorDB)  
-> **Tracks Entered:** Track 01 (Connected Data) & Track 02 (Agent Memory and Coordination)
+> **Tracks Entered:** Track 01 (Connected Data) & Track 02 (Agent Memory and Coordination)  
+> **Live Demo Cockpit:** [https://maelin-graph-hacks-demo.onrender.com](https://maelin-graph-hacks-demo.onrender.com)
 
 ---
 
@@ -41,9 +42,13 @@ Maelin is an incident-response decision engine built on **FalkorDB**:
 
 ---
 
-## Quickstart (Run in 2 Minutes)
+## Quickstart
 
-### 1. Start with Docker Compose
+### Option A: Try It Live (Zero Setup)
+Test the deployed FalkorDB cockpit directly in your browser:
+* **Live Demo Cockpit:** [https://maelin-graph-hacks-demo.onrender.com](https://maelin-graph-hacks-demo.onrender.com) (Pre-seeded with Tenant Alpha & Beta)
+
+### Option B: Run Locally with Docker (2 Minutes)
 ```bash
 docker compose up -d --build
 ```
