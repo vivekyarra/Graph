@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from maelin.agents import investigate
-from maelin.logic import analyze
-from offline_graph import traversal_fixture, MAX_CANDIDATE_ACTIONS
+from maelin.logic import analyze, MAX_CANDIDATE_ACTIONS
+from offline_graph import traversal_fixture
 from maelin.api import api
 from test_agents import FakeFalkorStore, SCENE
 
