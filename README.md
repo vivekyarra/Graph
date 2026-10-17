@@ -1,240 +1,143 @@
-# Maelin: Graph-native incident decision engine
+# MAELIN — Graph-native incident response time machine
 
-Maelin is a working graph-backed incident-response demonstrator. **Choose a source, suspected compromised node, and target** from the FalkorDB topology, or click a graph node to investigate its pivot routes. An optional alert summary travels with the incident. The graph discovers the possible attack routes and business dependencies with bounded Cypher; Maelin ranks only interventions that cut *every discovered route*.
+**See what breaks before you fix it. Remember what happened last time.**
 
-## What is now live in the architecture
+Maelin investigates a synthetic cyber incident, enumerates *all bounded attack paths* with FalkorDB Cypher, reasons about interventions with real read-only MCP graph tools, and simulates the impact on a **disposable FalkorDB graph clone**. A second incident can reuse operator-reported experience from an isolated graph memory and explain why its decision changed.
 
-- **MCP tool execution:** the Docker Compose agent pipeline calls four typed graph tools through a real MCP client/server stdio session. Each invocation produces an inspectable, persisted `mcp / tool_called` entry in the agent handoff ledger. MCP failures stop the investigation rather than silently producing local graph guesses.
-- **Three specialist agents:** Recon gathers graph evidence, Memory recalls graph-linked prior episodes and procedures, and Remediation evaluates safe graph cuts. With `OPENAI_API_KEY` configured, Recon and Memory add bounded LLM interpretations and Remediation uses validated tool-call plan selection. Without a model key the UI accurately reports deterministic policy mode; no AI inference is claimed.
-- **Graph-native procedural experience:** `IncidentPattern` nodes link to `Procedure` and `Episode` evidence in the isolated FalkorDB memory graph. Reports remain identified as operator-supplied and scoped to their incident fingerprint and tenant.
-- **Bounded counterfactual simulation:** proposed cuts are applied only to a disposable copy of the FalkorDB graph, then queried again to measure remaining routes and impacted customer flows.
-- **Dynamic incident input:** `POST /api/investigate` accepts `source`, `vulnerable`, `target`, and `alert` in addition to `tenant` and `goal`; named assets are validated against the queried live graph. Simulation and outcomes use the exact scene persisted on their session.
+**Hackathon:** [Graph Hacks: Context for AI Agents — WeMakeDevs × FalkorDB](https://www.wemakedevs.org/hackathons/falkordb) (October 15–18, 2026). **Tracks:** 01 — Agents That Act on Connected Data, 02 — Agent Memory and Coordination.
 
-## Run and verify
+## Five-minute judge journey
 
-```bash
-docker compose up -d --build
-docker compose exec -T app python -m maelin.seed --tenant alpha
-docker compose exec -T app python -m maelin.seed --tenant beta
-```
+1. Run the Docker Compose stack and seed tenant Alpha and Beta (commands below). Visit http://localhost:8000.
+2. Investigate the demo: two compromised routes reach the customer database; the selected surgical pair blocks both without taking customer flows offline.
+3. Inspect the MCP tool ledger, verified Cypher path payloads, counterfactual cut and business-impact meter. Replay the cut in a disposable FalkorDB clone.
+4. Report a *synthetic* failed action and start a new session. The graph-linked prior incident changes the proposed intervention. Switch to Beta to verify tenant isolation.
+5. Inject a synthetic shadow route: the previous plan no longer contains the incident, and new graph queries drive a different proposal.
+6. Choose another source/pivot/target directly from the graph. Expand **Load a custom synthetic infrastructure graph** to import another JSON scenario into a NEW FalkorDB tenant.
 
-Open http://127.0.0.1:8000. To use real model reasoning as well as MCP tool access, supply `OPENAI_API_KEY` to Compose. The integration workflow runs real FalkorDB, Python tests, graph-replay judge proofs, a Dockerized API and headless Chromium. For a public deployment, remove local-demo configuration, require a strong `MAELIN_OPERATOR_TOKEN`, restrict FalkorDB network access, and terminate TLS at a trusted proxy.
+The browser is an interactive, draggable force-layout incident cockpit. It does not compute reachability or remember incidents in JavaScript: all authoritative graph data, memory and simulation state stay in FalkorDB.
 
-## Submission vision
+## Architecture
 
-**See the consequences. Remember the cost.** Maelin connects explainable attack-path discovery with graph-native incident memories and human-reviewed counterfactual repairs. Its demo scenario is synthetic by design; live graph connectivity, the MCP call ledger, and replayed Cypher cuts are concrete technical demonstrations, not claims of action on real customer infrastructure.
+    Browser — FastAPI operator boundary
+        |
+        +--> Session-scoped three-agent pipeline
+        |       Recon — MCP: inspect_attack_paths / inspect_business_dependencies
+        |       Memory — MCP: recall_incident_outcomes / inspect_business_dependencies
+        |       Remediation — MCP: list_candidate_interventions
+        |                      + admissible plan tool-choice
+        |       [Each specialist can initiate additional LLM-selected read-only
+        |        graph tool calls; the app enforces tenant and incident arguments]
+        |
+        +--> FalkorDB tenant topology graph — authoritative assets, pivots,
+        |       business dependencies, interventions, scenario metadata
+        |
+        +--> FalkorDB tenant memory graph — session, handoffs, episodes,
+                procedures, incident patterns, semantic patterns,
+                conversation turns and provenance
 
----
+### Why the graph is indispensable
 
+FalkorDB computes bounded paths using Cypher variable-length traversals. The simulation makes a **native graph copy**, deletes the proposed edges/nodes in that copy, and **re-runs** Cypher to determine remaining attack reachability. The memory agent reads persisted graph relationships; no SQLite/JSON/in-memory path-finder exists in production. Remove FalkorDB and the API cannot investigate, remember, simulate or produce graph-derived candidate plans.
 
-**Graph Hacks: Context for AI Agents** (WeMakeDevs × FalkorDB, Oct 15–18, 2026)
+Key graph queries (implemented in [store.py](maelin/store.py)):
 
-**Pronunciation:** *MAY-lin.* Maelin is the AI incident-response companion that explores the consequences of proposed containment actions and remembers previous failures. **Tagline:** “See what breaks before you fix what’s broken.”
+    MATCH p=(s:Asset {id:$source})-[:CAN_PIVOT*1..7]->(t:Asset {id:$target})
+    WITH p WHERE ANY(n IN nodes(p) WHERE n.id=$vulnerable)
+    RETURN [n IN nodes(p)|n.id], [r IN relationships(p)|r.edge_id] LIMIT 257
 
-**Entering BOTH tracks:** (1) Agents That Act on Connected Data; (2) Agent Memory and Coordination.
+    MATCH p=(f:Asset)-[:DEPENDS_ON*1..7]->(s:Asset)
+    WHERE f.kind='business_flow'
+    RETURN f.id, f.value, [n IN nodes(p)|n.id] LIMIT 1025
 
-> **The 15-second story:** An attacker can reach a customer database along *two* privilege paths. Shutting down the compromised authentication service stops the exposure but destroys checkout. MAELIN finds the cheapest complete graph cut, compares the two futures, and remembers when a previous containment action caused a surprise outage. The next session makes a different, safer recommendation. **Judge-verifiable twist:** a proposed intervention can be applied to a disposable FalkorDB graph clone and re-queried; a new hidden pivot makes yesterday's successful cut fail visibly.
+    MATCH (p:IncidentPattern {fingerprint:$fingerprint})
+       -[:HAS_EPISODE]->(e:Episode)-[:OBSERVED]->(a:ActionExperience)
+    RETURN a.action_id, a.outcome, a.cost_observed, a.evidence_status, e.created, e.id
 
-This is a **real, source-code prototype**, not a claim that the system has been deployed or that the model can actually execute cloud remediation. It uses **synthetic assets**, **synthetic costs**, and **operator-reported simulation outcomes**. No real infrastructure is changed.
+    MATCH (k:SemanticPattern {key:$key})
+       -[:REMEMBERS]->(e:Episode)-[:OBSERVED]->(a:ActionExperience)
+    RETURN a.action_id, a.outcome, a.cost_observed, a.evidence_status, e.created, e.id
 
-## Why Maelin is not a generic agent wrapper
+The deterministic kernel **never chooses an intervention that leaves a known bounded threat route open**. It enumerates at most 48 candidate interventions in combinations of up to three, accounts for modeled lost business flows, and penalizes historical operator-reported damage. Uncertain or excessive path counts fail closed. This is an explanation of a bounded synthetic graph, not proof that a real infrastructure deployment is secure.
 
-| Track | Load-bearing functionality | Demonstrate it |
-|---|---|---|
-| Connected Data | FalkorDB Cypher enumerates bounded multi-hop `CAN_PIVOT` attack routes *through the vulnerable asset*, and separate customer `DEPENDS_ON` paths. A deterministic counterfactual engine refuses to recommend any action set leaving even one known threat path uncut. | Two independent routes, a tempting partial fix rejected, a dangerous quarantine option with high customer impact, and a low-disruption complete graph cut; the separate sandbox graph then executes that cut and re-queries the remaining routes. |
-| Agent Memory and Coordination | Separate tenant-specific FalkorDB memory graphs hold `Session`, `Handoff`, `Episode`, `ActionExperience`, and proposed actions. Specialists **read the previous agent's persisted handoff** rather than passing Python state. Previous operator-reported failures affect next-session scores. | Record failed role revocation → start a new session → recommendation switches to rotating both credentials. Change tenant → memory does not leak. |
+### Episodic, semantic and procedural memory
 
-### The one truly important innovation
+- **Episodic:** immutable tenant-scoped Episode → OBSERVED → ActionExperience records, with timestamps, evidence status, and cost.
+- **Semantic:** SemanticPattern nodes keyed by *asset roles/kinds* connect related incident episodes. Similar-but-not-identical incidents receive only 25% of reported-loss weight; action IDs must match current candidate actions.
+- **Procedural:** IncidentPattern → HAS_PROCEDURE → Procedure → SUPPORTED_BY → ActionExperience. Outcome reports create review procedures tied to source evidence.
+- **Conversation and coordination:** Session → HAS_TURN → ConversationTurn preserves operator goal and assistant recommendation; Session → HAS_HANDOFF → Handoff preserves each specialist's verified evidence and every MCP stdio tool trace.
+- **Isolation:** each tenant has its own topology and memory graphs, with session-bound action authorization and immutable outcome reports.
 
-Most agents answer **“What happened?”** Maelin answers **“What will break if we do the obvious thing, and what did we learn the last time it went wrong?”**. It combines threat connectivity, service blast radius, counterfactual action-set planning, and outcome-aware persistent memory into one decision.
+### What makes these agents real?
 
-### Architecture
+When a model is configured, all **three specialist agents** can request typed read-only graph tools in a bounded LLM loop (at most three rounds). Tool calls execute against real FalkorDB through MCP stdio; model-supplied IDs, tenant names, and arbitrary Cypher are discarded. The remediation model then selects only among deterministically admissible graph-cut candidates through a validated function tool. The UI labels the model mode and exposes call traces.
 
-```text
-                      FALKORDB — tenant-specific isolated graphs
-                  ┌─────────────────┐  ┌───────────────────┐
-Synthetic alert ─►│ topology graph  │  │ memory graph      │
-                  │ Asset            │  │ Session           │
-Recon agent ─────►│ CAN_PIVOT        │─►│ Handoff: paths    │
-   (Cypher)       │ DEPENDS_ON       │  │ Handoff: recall   │
-                  │ Intervention     │  │ Episode           │
-                  └─────────────────┘  │ ActionExperience  │
-                                        └─────────┬─────────┘
-                                    Memory agent ◄┘
-                                         │ persists recall
-                                         ▼
-                                 Remediation agent
-                                 • fetch BOTH handoffs
-                                 • choose complete graph cut
-                                 • simulate business impact
-                                 • penalize prior failures
-                                         │
-                            Optional OpenAI tool-choice arbitration
-                            (bounded to safe approved plans)
-                                         │
-                             Web UI + read-only MCP tools
-                                         │
-                             Human reports outcome to memory
-```
+If **no** model API or Ollama-compatible endpoint is configured, the safe deterministic policy still works and is labeled accurately. MCP graph tools remain active in Docker Compose. The README makes no claim that a model ran when one did not.
 
-**No FalkorDB, no answer.** The production API has no local-JSON or NetworkX fallback. `logic.traversal_fallback()` is deliberately isolated in the **offline unit tests only**. An unreachable database returns HTTP 503 instead of pretending a result was computed.
+## Run locally — real FalkorDB
 
-## Run on your own computer (Docker Desktop, including Windows)
+Prerequisite: Docker with Compose.
 
-From the `maelin` directory:
+    git clone https://github.com/vivekyarra/Graph.git
+    cd Graph
+    docker compose up -d --build
+    docker compose exec -T app python -m maelin.seed --tenant alpha
+    docker compose exec -T app python -m maelin.seed --tenant beta
 
-```powershell
-docker compose up --build -d
-# Wait until the FalkorDB service has started:
-docker compose exec app python -m maelin.seed --tenant alpha
-docker compose exec app python -m maelin.seed --tenant beta
-```
+Open **http://127.0.0.1:8000**. The Compose service is bound to localhost and uses explicit local-demo mode. Never expose that exact configuration to the public internet.
 
-Open **http://localhost:8000** for MAELIN and **http://localhost:3000** for the FalkorDB graph browser. The FalkorDB wire protocol is on port 6379.
+### Enable LLM agent reasoning
 
-The first run starts with **no incident history**. Open the UI, click **Investigate incident**, inspect two vulnerable attack paths, and compare the default response to emergency quarantine. Click **Replay selected plan in FalkorDB** to create a temporary native graph clone, mutate its pivot edges and re-check routes; it will be deleted after the replay, with the result saved as a handoff. Then click **Report unexpected outage**, specifying `revoke-admin-role` when offered. Click **Start a new session** to observe a changed recommendation based on that recorded report. Next click **Inject shadow route**, which writes an additional synthetic attacker pivot to FalkorDB, and investigate again: the old two-edge fix and credential rotation no longer cut all three paths, so the agent must choose a different intervention. You can also replay the old session's action IDs via `/api/demo/simulate` and observe the remaining open path. Switch to Tenant Beta to check separation. To erase the demo data for one tenant, explicitly pass `--reset` to the seed module; note that doing so **deletes that tenant's two graphs**.
+Option A — OpenAI compatible hosted provider: set an API key in your local .env file and run:
 
-To shut down: `docker compose down`. To delete *all Docker-hosted persisted graph data*: `docker compose down -v` (destructive).
+    OPENAI_API_KEY=<your private key>
+    MAELIN_USE_LLM=auto
+    MAELIN_LLM_MODEL=gpt-4o-mini
 
-**Backend**: FastAPI `http://localhost:8000/docs` includes typed endpoints. `POST /api/investigate` returns bounded paths, the score breakdown for counterfactual plans, graph-memory precedents, and a durable handoff trace. `POST /api/demo/simulate` takes `{tenant, session_id, action_ids}` and, only in trusted demo mode, executes these on a disposable FalkorDB graph copy, re-traverses the modified copy, deletes it and persists the report in the memory graph. The real topology graph is never modified by replay.
+Option B — local Ollama (with an installed tool-capable model):
 
-### Optional model-powered agent choice
+    MAELIN_LLM_BASE_URL=http://host.docker.internal:11434/v1
+    MAELIN_LLM_MODEL=<your installed tool-capable model>
+    MAELIN_USE_LLM=auto
 
-The safety reasoning runs deterministically so it is independently testable. An LLM is **optional** and cannot invent graph paths, issue Cypher or execute fixes. It can use a function tool to select among a narrow set of fully covering plans, with its output checked by a deterministic validator. Without it, the UI explicitly identifies `deterministic_policy` mode. With an LLM, it identifies `llm_tool_choice_validated` or an explicit unavailable fallback.
+Do not commit credentials. Hosted model access is optional for running the deterministic safety proof, but **required to demonstrate live language-model reasoning**. Tool-loop evidence is recorded per session and can be inspected in the UI.
 
-For model-powered mode, install the optional packages (adjust Dockerfile as needed) and set:
+## Import a second incident (not hardcoded to auth-service)
 
-```bash
-pip install -r requirements-agent.txt
-export OPENAI_API_KEY="<your API key>"
-export MAELIN_USE_LLM=1
-# Local development: FALKOR_HOST=localhost uvicorn maelin.api:api --reload
-```
+The original synthetic dataset is [data/demo.json](data/demo.json). You can import up to 120 assets, 240 edges and 48 interventions from your own synthetic JSON, with required fields:
 
-For Docker Compose, set the environment variables on the **app** container and rebuild the image with `requirements-agent.txt`; the default Docker image installs only `requirements.txt` and therefore runs in deterministic mode. Do **not** commit API keys or record them in a demo.
+- Top-level: \`scenario\`, \`fingerprint\`, \`source\`, \`vulnerable\`, \`target\`, \`assets\`, \`pivot_edges\`, \`depends_edges\`, \`actions\`.
+- Asset: \`id\`, \`kind\` (ingress/service/identity/database/business_flow), optional \`x\`, \`y\`, \`value\`, \`critical\`.
+- Edge: \`id\`, \`from\`, \`to\`, optional \`evidence\`. Intervention: \`id\`, \`label\`, \`cost\`, \`blocked_nodes\`, \`blocked_edges\`, optional \`note\`.
 
-### MCP server
+The validator checks endpoint references, unique IDs, action catalogs, bounded graph size and numeric costs. POST \`/api/scenarios\` seeds **only a new tenant**; it never silently overwrites existing graph data. You may also use:
 
-With optional packages installed and FalkorDB started:
+    python -m maelin.seed --tenant fresh_case --file custom-scenario.json
 
-```bash
-python -m maelin.mcp_server
-```
+You can use \`POST /api/investigate\` with \`tenant\`, \`goal\`, \`source\`, \`vulnerable\`, \`target\`, \`alert\`; source/pivot/target are checked against live FalkorDB assets. Trace endpoints: \`GET /api/trace/{session_id}\` and \`GET /api/conversation/{session_id}\`.
 
-The bridge exposes only typed, bounded `inspect_attack_paths`, `inspect_business_dependencies`, `recall_incident_outcomes`, and `propose_containment` tools. It exposes **no arbitrary Cypher execution** and **no actual infrastructure mutation**. Connect it as a stdio MCP server in your agent host.
+## Validation and reproducibility
 
-## Critical graph model and Cypher
+GitHub Actions are configured for real FalkorDB/Cypher integration, isolation, concurrent sessions, 5,000 randomized optimizer/oracle cases, executable judge evidence, Dockerized FastAPI, actual Playwright/Chromium screenshots and a WebM recording. The standalone demo container additionally has a smoke workflow that runs its own FalkorDB process; it must also be green before submission. Status of each run is available in [Actions](https://github.com/vivekyarra/Graph/actions). Artifacts are uploaded as \`maelin-dual-track-evidence\` and \`maelin-real-browser-proof\`.
 
-- Graphs are physically separated per tenant: `maelin_alpha_topology`, `maelin_alpha_memory`, etc. Tenant names are syntactically validated.
-- Topology vertices: `(:Asset {id,kind,x,y,value,critical})` and `(:Intervention {id,blocked_nodes,blocked_edges,cost})`.
-- Attack transitions: `(:Asset)-[:CAN_PIVOT {edge_id,evidence}]->(:Asset)`. **Synthetic assertions of possible transitions**, not verified exploitation.
-- Customer dependency: `(:Asset)-[:DEPENDS_ON {edge_id,evidence}]->(:Asset)`.
-- Memory: `(:Session)-[:HAS_HANDOFF]->(:Handoff)`; `(:Session)-[:PROPOSED]->(:ProposedAction)`; `(:Session)-[:RESULTED_IN]->(:Episode)-[:OBSERVED]->(:ActionExperience)`.
+    docker compose up -d graph
+    pip install -r requirements-dev.txt -r requirements.txt
+    FALKOR_INTEGRATION=1 python -m pytest -q
+    python -m maelin.judge --output judge-proof.json
 
-**Attack traversal** (production code in `maelin/store.py`):
+For Windows PowerShell set \`$env:FALKOR_INTEGRATION="1"\` before running pytest. The standalone demo uses \`Dockerfile.demo\`: it runs **the real FalkorDB engine inside the same container**, but its data are **ephemeral across host shutdown/redeploy**. Docker Compose or hosted FalkorDB is needed for durable memory across process restarts.
 
-```cypher
-MATCH p=(s:Asset {id:$source})-[:CAN_PIVOT*1..7]->(t:Asset {id:$target})
-WITH p WHERE ANY(n IN nodes(p) WHERE n.id = $vulnerable)
-RETURN [n IN nodes(p) | n.id] AS assets,
-       [r IN relationships(p) | r.edge_id] AS pivots LIMIT 257
-```
+## Deployment and security
 
-Why not `shortestPath()` followed by a vulnerability filter? A shorter *benign* path can conceal a longer path through the compromised service. This seeded graph contains that exact adversarial counterexample. The benchmark tests that both dangerous routes are found without counting the benign shortcut.
+Two supported deployment modes:
 
-**Customer dependency query:**
+- **Public one-container demo**: build \`Dockerfile.demo\` as a Docker web service, set a long random \`MAELIN_OPERATOR_TOKEN\`. The only public socket is FastAPI HTTP; FalkorDB listens on loopback. Suitable for a temporary synthetic hackathon demo.
+- **Durable hosting**: use \`Dockerfile\` with external FalkorDB Cloud. Set \`FALKOR_HOST\`, \`FALKOR_PORT\`, \`FALKOR_USERNAME\`, \`FALKOR_PASSWORD\`, \`FALKOR_SSL=1\` and \`MAELIN_OPERATOR_TOKEN\` through the deployment platform's secret manager. Example infrastructure is in [render.yaml](render.yaml).
 
-```cypher
-MATCH p=(f:Asset)-[:DEPENDS_ON*1..7]->(s:Asset)
-WHERE f.kind='business_flow'
-RETURN f.id, f.value, [n IN nodes(p) | n.id] LIMIT 1025
-```
+Never enable \`MAELIN_LOCAL_DEMO=1\` on a public service. Use HTTPS/TLS and the operator token for all protected API calls. Database connections are authenticated where appropriate, and simulated cuts never call real infrastructure services. User-uploaded graph information must be synthetic or owned/authorized.
 
-**Memory recall query:**
+## Submission materials
 
-```cypher
-MATCH (e:Episode {fingerprint:$fingerprint})-[:OBSERVED]->(a:ActionExperience)
-RETURN a.action_id, a.outcome, a.cost_observed,
-       a.evidence_status, e.created, e.id
-ORDER BY e.created DESC LIMIT 30
-```
+Read [JUDGE_PACKET.md](JUDGE_PACKET.md) for traceable Track 01/02 evidence and honest scope; [SUBMISSION_VIDEO_AND_JUDGE_QA.md](SUBMISSION_VIDEO_AND_JUDGE_QA.md) for a working-video recording plan; and [VALIDATION_STATUS.md](VALIDATION_STATUS.md) for the test matrix.
 
-Only operator-reported outcomes are persisted in this prototype; they are labeled **operator_report**, not automatically verified real-world success or failure.
-
-## Tests and empirical results
-
-```bash
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
-```
-
-Offline (available in the authoring environment) tests exercise the optimizer, a stand-in graph-store interface, and synthetic graph reachability. A separately written exhaustive oracle probes **600 random cases** to ensure the optimizer always matches the oracle's minimum cost, including when previous failures alter the score. The unit tests cannot establish that FalkorDB executes every Cypher pattern correctly.
-
-For a real integration smoke test after Docker starts:
-
-```bash
-# Windows PowerShell:
-$env:FALKOR_INTEGRATION="1"
-python -m pytest -q tests/test_live_falkordb.py
-
-# Or inside the Docker app container (pytest is not in the default image):
-# pip install -r requirements-dev.txt before running
-```
-
-A GitHub Actions workflow at `.github/workflows/falkordb-integration.yml` starts a real FalkorDB service, runs all tests with `FALKOR_INTEGRATION=1`, emits failed-container logs, and tears down the service. **This CI configuration is authored, not yet executed in a published repository.**
-
-The real smoke test creates only the dedicated `maelin_ci_alpha_*` and `maelin_ci_beta_*` graphs, clears those dedicated test graphs, verifies actual Cypher results, performs and cleans up database-native graph-copy intervention replays, persists handoffs and outcomes, verifies idempotency and tenant isolation, and injects a third path to invalidate a previously valid containment plan.
-
-**Current verified result in this package:** 24 offline tests passed, two live integration tests skipped because no FalkorDB server was available in the authoring environment. **No live FalkorDB Cypher correctness, Docker startup, or submission eligibility is claimed as tested yet.**
-
-## How to demo it in ~3 minutes
-
-1. **0:00–0:25** “A compromised login component has two routes to the production database. The obvious containment action is expensive.” Show topology and two red routes.
-2. **0:25–0:55** Click investigate. Show the two independent vulnerable paths and a partial intervention rejected because it leaves one route open. **Replay a real graph copy**, showing `2 → 0` paths after the surgical cut.
-3. **0:55–1:30** Show Future A (quarantine auth, synthetic 160 impact units) versus Future B (surgical cut, 0 modeled customer-flow impact). Switch plans and show highlighted cuts.
-4. **1:30–2:15** Report a synthetic unexpected outage for the role revocation intervention. Start a **new session**. Memory agent retrieves the incident and the remediation plan switches to credential rotation. Show the actual `Session → Handoff` graph in FalkorDB Browser.
-5. **2:15–2:45** Click **Inject shadow route**. A third synthetic attacker route appears. Replay the old session plan to show `3 → 1` still-open threat path, then investigate again to choose a different graph-dependent plan. Then switch to Tenant Beta to confirm its memory is isolated.
-6. **2:45–3:00** Show the FalkorDB Browser's stored session/handoff nodes. Close with: “The agent cannot act without a graph, cannot recommend an incomplete intervention, and does not forget what its earlier decision cost.”
-
-**Don't fake the demo**: run with FalkorDB, not screenshots, and label synthetic outcomes. Recording a failure is not an actual infrastructure fault-injection experiment.
-
-## Important limitations and honest future work
-
-- Threat edges model *plausible* attacker transitions supplied by the synthetic dataset. They are not proofs that a real attacker has met preconditions. Real connectors, IAM semantics, and evidence provenance are future work.
-- The bounded Cypher query stops at 7 hops. 257+ threat paths or 1025+ business paths trigger refusal, but a path beyond the depth limit could still exist. **Do not infer actual safety from a negative result.**
-- Interventions are implemented as Cypher `DELETE` operations on an isolated FalkorDB graph clone, then verified by a fresh graph traversal; the clone is deleted. Scoring uses illustrative, uncalibrated impact units. The project does **not** execute real revocations, quarantines, or credential changes.
-- The `Inject shadow route` endpoint is enabled **only in the included trusted LOCAL Docker demo** using `MAELIN_ENABLE_DEMO_MUTATIONS=1`. Disable that variable in public deployments. Graph-writing APIs **fail closed by default**. The bundled Docker Compose binds all ports to `127.0.0.1` and explicitly sets `MAELIN_LOCAL_DEMO=1` to permit the local interactive demo. For any remote deployment unset `MAELIN_LOCAL_DEMO`, set a strong `MAELIN_OPERATOR_TOKEN`, disable `MAELIN_ENABLE_DEMO_MUTATIONS`, and terminate TLS at a trusted proxy. This is a prototype with a single operator token, not a complete production multi-user RBAC solution.
-- No benchmark against competing Graph Hacks entries exists; **no claim of winning is warranted yet**.
-- Live FalkorDB test remains **mandatory** before submission; Docker and optional-model behavior were not end-to-end verified here.
-- AI coding assistance helped build this prototype. **Disclose this in the submission**; participants must review, test, and understand the code themselves.
-
-## Submission compliance checklist
-
-- [ ] Confirm registration and actual team name (1–4 members) on the official site.
-- [x] Specify both targeted tracks in docs.
-- [x] Include schema and dependency-defining Cypher queries.
-- [x] Use only synthetic data in the demo.
-- [ ] Run and record real FalkorDB integration tests (workflow provided but not executed).
-- [ ] Confirm fresh `docker compose up --build` works from a clean machine.
-- [ ] Publish a public source repository once you approve it.
-- [ ] Record a real working video and include a live deployment or tested local instructions.
-- [ ] Publish README, architecture, documented benchmarks and AI assistance disclosure.
-- [ ] Submit by **Oct 18, 2026, 11:59 PM IST**.
-
-### Key organizers/sponsor references
-
-- [Official hackathon challenge](https://www.wemakedevs.org/hackathons/falkordb)
-- [Official rules](https://www.wemakedevs.org/hackathons/falkordb/rules)
-- [Organizer tutorial — Blast Radius](https://www.wemakedevs.org/blogs/how-to-build-an-agent-that-reasons-over-a-graph) — **intentionally differentiated from** this example.
-- [FalkorDB sponsor winners/standouts](https://www.falkordb.com/blog/memory-meets-motion-the-falkordb-standouts/)
-- [Official FalkorDB Python client](https://github.com/FalkorDB/falkordb-py)
-- [Official FalkorDB MCP server](https://github.com/FalkorDB/falkordb-mcp)
-
-Copyright remains yours/your team’s under the hackathon rules; no external competitor's source code is copied into this project. Choose your preferred license before publishing.
-
-## Hardening notes (October 16)
-
-- Graph writes (including investigation session creation) now fail closed unless a matching `MAELIN_OPERATOR_TOKEN` header is supplied, or the explicitly local and loopback-bound `MAELIN_LOCAL_DEMO=1` configuration is used. Read-only endpoints remain accessible; do not expose unrestricted graph browsing in sensitive deployments.
-- `POST /api/outcome` treats the initial operator outcome per session/action as immutable: conflicting retries return HTTP 409 instead of falsely claiming the new value was saved. Matching retries are idempotent.
-- Local Compose binds FalkorDB and the demo web app to 127.0.0.1; do not bind Docker ports publicly or reuse local-demo overrides in deployed infrastructure.
-- Stored reports are operator assertions, never automatically verified forensic evidence. The source's synthetic impact numbers are illustrative.
+**AI-assistance disclosure:** ChatGPT / OpenAI AI coding assistance was used for code generation, graph/query implementation, tests, documentation, architecture review and debugging. The participant(s) must verify and understand the code, record the real demo, and submit it themselves. See competition Rule 11 and Rule 13. Do not present generated code without participant verification.

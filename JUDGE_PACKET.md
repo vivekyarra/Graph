@@ -1,63 +1,43 @@
-# Maelin | Judge-proof evidence packet | Oct 16, 2026
+# Maelin — judge evidence packet
 
-**One sentence:** Maelin uses a graph to find *every modeled threat route*, proposes a graph-cut intervention, mutates a disposable FalkorDB graph to check whether that cut works, and remembers outcome reports across sessions. The same topology is re-evaluated *with and without memory* to show exactly when memory changed the decision.
+**Track 01: Agents That Act on Connected Data. Track 02: Agent Memory and Coordination.**
 
-## Exact entries (both tracks)
+## What to show live
 
-- **Agents That Act on Connected Data**: The key decision comes from FalkorDB's `CAN_PIVOT` and `DEPENDS_ON` traversals, the graph-defined interventions, and replay on FalkorDB's native copied graph. A shortest benign route must not hide a longer vulnerable one. Incomplete cuts are refused.
-- **Agent Memory and Coordination**: Recon persists path evidence as a `Handoff` attached to a `Session`; Memory *reads* that handoff, queries previous `Episode → ActionExperience` records, and persists another handoff; Remediation *reads* both handoffs and produces a plan. Persistent memory can alter its action. A controlled ablation computes a fresh policy from the *same graph* with just the reports removed; the result is displayed in the UI and returned in the API.
+Start the Docker Compose or hosted demo and demonstrate **a real FalkorDB query for the paths**, **an actual MCP tool call**, **an authenticated scene selection**, **the cut applied to a copied graph**, and **a repeated incident whose policy changes because of persisted graph experience**.
 
-## One command: verify or falsify every central claim
+### Track 01 — what the graph does
 
-On a machine with FalkorDB running (e.g., `docker compose up -d graph`):
+Each Recon query uses FalkorDB Cypher to find paths from entry to target passing through the selected compromised asset (depth <=7, max 256 records). A separate query finds business-flow dependencies (max 1024). Remediation enumerates every bounded action combination and refuses those that leave a known compromised route uncovered. Replaying an action creates a new FalkorDB graph, makes Cypher DELETE modifications, and independently queries reachable paths after the change. A newly injected pivot must make the old cut incomplete.
 
-```bash
-python -m pip install -r requirements-dev.txt
-python -m maelin.judge --output judge-proof.json
-```
+**Demonstration:** first incident returns two paths; a surgical pair cuts both, while blanket quarantine interrupts modeled customer flows. Inject the shadow route and repeat: three paths now exist. User can also choose a different node or import an entirely separate synthetic topology.
 
-The command uses a **random, temporary synthetic tenant graph**. It fails on any unmet assertion, deletes both temporary tenant graphs on exit and prints evidence in JSON. It does not modify a real cloud account or execute infrastructure commands.
+### Track 01 — agents and MCP
 
-Check the `maelin-dual-track-evidence` artifact on the successful GitHub Actions run: the CI executes this command against the **real** FalkorDB server, not an in-memory mock. `FALKOR_INTEGRATION=1 python -m pytest -q` also exercises live Cypher, concurrent handoffs, copy/delete, replay, drift, and tenant-specific memories.
+In Docker Compose and the standalone demo, Recon/Memory/Remediation use \`MAELIN_AGENT_TOOLS=mcp\`: typed stdio tool invocations, with recorded \`mcp / tool_called\` handoffs. With an OpenAI-compatible model configured, each specialist can select which read-only graph tool to query, and Remediation makes a separately checked function-tool selection among allowed interventions. The model cannot execute arbitrary Cypher or push actual infrastructure changes. If the model isn't configured, the UI says so.
 
-## The 75-second judge sequence
+### Track 02 — persistent graph context
 
-1. **Graph falsification**: `internet → auth-service → admin-role/vault-sync → customer-db` has two independent 7-hop-bounded danger routes even though the graph has a shorter benign bypass. Show the actual source-query Cypher.
-2. **Future fork**: Naïve quarantine costs 160 **synthetic impact units**. The complete surgical cut costs 0 modeled customer impact (base intervention cost 5). Run clone replay: graph route count **2 → 0**. A one-sided cut leaves **1** still open.
-3. **Prove memory causality**: Make a clearly labeled *synthetic operator report* for `revoke-admin-role`, start a new session. The graph-stored outcome is recalled; the decision changes. Show the blue/orange **Without memory / With memory** comparison, built from the same topology/actions. This is evidence that the *decision policy* used memory, **not** an independently verified real outage.
-4. **Adversarial drift**: Introduce the synthetic `shadow-role` route. Replay the *old* intervention again: one dangerous path remains (**3 → 1**), so an outdated “safe” recommendation is no longer valid. The next investigation changes its plan based on FalkorDB's updated graph.
+- \`Session\` → \`HAS_HANDOFF\` → \`Handoff\`: all graph-driven agent communications and MCP calls.
+- \`Session\` → \`HAS_TURN\` → \`ConversationTurn\`: operator goal/alert and assistant response.
+- \`IncidentPattern\` → \`HAS_EPISODE\` → \`Episode\` → \`OBSERVED\` → \`ActionExperience\`: sourced episodic memory.
+- \`IncidentPattern\` → \`HAS_PROCEDURE\` → \`Procedure\` → \`SUPPORTED_BY\` → \`ActionExperience\`: procedural review constraints.
+- \`SemanticPattern\` → \`REMEMBERS\` → \`Episode\`: bounded generalization by asset kind/role.
 
-## Falsification and limits
+Compare the same current graph with and without memory to establish whether the decision change is explained by past operator reports. Show tenant Beta with no leaked Alpha memory. Graphs are scoped to tenants and outcomes to actual offered session actions.
 
-| Claim | Objective test | Boundary |
-|---|---|---|
-| Multi-hop matters | Live Cypher returns longer vulnerable paths despite a shorter bypass | At most 7 hops and 256 enumerated threat paths |
-| Graph is load-bearing | Remove/stop FalkorDB: API returns 503 instead of a synthetic answer | No local JSON source in production |
-| Counterfactual is not pretend | Native graph copy, Cypher edge/node deletion, re-query, cleanup | Synthetic graph, no cloud actions |
-| Memory changes a decision | Same graph/actions cold vs warm ablation shows different recommended action | Input experience is an operator report, not forensic proof |
-| Multi-agent coordination is durable | Separate graph-stored handoffs and deterministic specialists | Not three independent autonomous LLMs; model arbitration is optional |
-| Tampering is constrained | Write and graph-read protection outside local demo, tenant graph separation | Single operator token, not enterprise RBAC |
-| Cost optimizer is bounded | Oracle fuzzing + explicit cap at 48 actions | No assertion of global optimality beyond 3 interventions or unseen topology |
+### Inspect tests rather than screenshots alone
 
-## What makes this more than the organizer's baseline tutorial?
+GitHub Actions has three concrete evidence channels:
 
-**A new decision primitive:** Two futures are not merely displayed. Maelin has an auditable evidence chain: graph-constrained optimizer → disposable graph *mutation* → second graph traversal → durable multi-agent memory → controlled memory ablation → topology-drift invalidation. Every arrow can be checked with the API or the judge harness. It also refuses incomplete plans, invalid costs, duplicate action IDs, and oversized candidate sets instead of silently claiming safety.
+1. **Python test + live FalkorDB workflow:** Cypher, graph copy, memory isolation, concurrent sessions, randomized oracle, Docker API and Chromium.
+2. **Judge replay harness:** \`python -m maelin.judge --output judge-proof.json\` proves cold → replay → memory → drift on disposable actual graphs.
+3. **Standalone demo image:** \`Dockerfile.demo\` starts the FalkorDB engine and API in one container and tests authenticated MCP calls.
 
-## Official rules audit
+Inspect the current Actions runs. CI passing validates the tested graph operations; it does *not* mean a model-provider account has been configured, nor does it replace a demo video.
 
-- ✅ FalkorDB primary graph database and a real dependency of both pathways.
-- ✅ Enter both Track 01 and Track 02; rules expressly permit multi-track entries.
-- ✅ Public/synthetic graph data only; no personal or restricted data.
-- ✅ Public source repository, explicit graph model, Cypher queries, Docker and setup commands.
-- ✅ Disclose AI assistance. Human participant MUST review/understand source, validate official account/team eligibility, and meaningfully contribute; do not claim AI-only output meets this requirement.
-- ⬜ Real demo video captured from a working FalkorDB instance, publicly accessible before submission.
-- ⬜ Participant personally reruns verification and reviews every claim; confirms submission on official panel before Oct 18, 23:59 IST.
-- ⬜ A live deployment is preferred, but the official rules accept complete local setup instructions.
+## Compliance and honesty
 
-**Not claimed:** a verified exploit, a quantified real business outage, a production security platform, autonomous cloud remediation, official judge scores, or any guarantee of winning.
+FalkorDB is the **primary and only runtime graph database**. The pure-Python traversal oracle is under \`tests/\` only. All demo topology and incidents are synthetic. No unauthorized real-world remediation or private user data are involved. The project's AI coding assistance is disclosed in README. A public deployed service is preferred but the hackathon also permits complete local setup instructions when deployment is impossible.
 
-Official rules: https://www.wemakedevs.org/hackathons/falkordb/rules
-
-## UI priority-policy proof
-
-The user-facing "Prefer fewer changes" toggle must work in deterministic mode (no LLM credentials). Within four cost units of the lowest-risk plan and without increasing modeled customer disruption, the selector prefers the fewest independent interventions. It returns the selected plan index and human-readable policy explanation. Tests show a two-action surgical plan under continuity and a one-action credential rotation when fewer changes are requested. This policy does not expand the graph-derived containment envelope.
+**Remaining human submission actions** (not claims of automated completion): participant confirms hackathon registration/team, verifies AI-model credential if presenting an LLM demonstration, records/hosts a real video, provides the final URL and submits before October 18, 2026 11:59 PM IST.
