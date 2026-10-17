@@ -6,7 +6,7 @@ and never lets model-generated Cypher, mutation or infrastructure commands run.
 """
 import json
 import os
-from .llm import model_enabled, make_client
+from .llm import model_enabled, make_client, configured_model
 
 
 TOOLS = {
@@ -66,7 +66,7 @@ def reason_with_tools(role, store, tenant, session_id, scene, evidence):
         client = make_client()
         for turn in range(3):
             response = client.chat.completions.create(
-                model=os.getenv("MAELIN_LLM_MODEL","gpt-4o-mini"),
+                model=configured_model(),
                 messages=messages, tools=catalog,
                 tool_choice="required" if turn == 0 else "auto",
                 temperature=0)
