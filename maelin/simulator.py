@@ -45,9 +45,9 @@ def run_simulation(store, tenant, session_id, scene, action_ids):
         raise LookupError("Intervention no longer exists in current topology")
     topo, _ = store.graphs(tenant)
     # Separate namespace per run also avoids the concurrency races of a shared
-    # scratch graph. FalkorDB Graph.copy is a database-native graph operation.
     graph_name = f"maelin_{tenant}_sim_{uuid.uuid4().hex[:8]}"
-    sim = topo.copy(graph_name)
+    temp_graph = topo.copy(graph_name)
+    sim = temp_graph
     try:
         original = _threat_paths(sim, scene)
         dependencies = _business_paths(sim)
@@ -81,6 +81,6 @@ def run_simulation(store, tenant, session_id, scene, action_ids):
             "boundary":"Synthetic graph, bounded to 7 hops. No production infrastructure changed; not a real-world safety certificate."})
     finally:
         # Do not leave per-session topology clones holding sensitive data.
-        sim.delete()
+        temp_graph.delete()
     store.handoff(tenant,session_id,"sandbox","replayed",result)
     return result

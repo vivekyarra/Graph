@@ -481,7 +481,12 @@ async function resetDemoState() {
     busy(false);
   }
 }
-$('resetDemo')?.addEventListener('click', resetDemoState);
+window.resetDemoState = resetDemoState;
+const btnReset = $('resetDemo');
+if (btnReset && !btnReset.dataset.hudWired) {
+  btnReset.dataset.hudWired = 'true';
+  btnReset.addEventListener('click', resetDemoState);
+}
 
 $('tenant').addEventListener('change', () => {
   current = null; selection = 0;

@@ -219,7 +219,7 @@ export MAELIN_USE_LLM=1
 
 ## FastMCP Server
 
-Maelin includes a built-in stdio FastMCP server exposing typed graph tools (`inspect_attack_paths`, `inspect_business_dependencies`, `recall_incident_outcomes`, `list_candidate_interventions`, `propose_containment`):
+Maelin includes a built-in stdio FastMCP server exposing typed graph tools (`inspect_attack_paths`, `inspect_business_dependencies`, `compute_asset_centrality`, `get_team_ownership`, `recall_incident_outcomes`, `list_candidate_interventions`, `propose_containment`):
 
 ```bash
 python -m maelin.mcp_server

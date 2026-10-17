@@ -101,6 +101,7 @@ def test_actual_api_routes_refuse_graph_writes_without_operator(monkeypatch):
                               'outcome':'unexpected_outage','cost_observed':10}),
             ('/api/demo/simulate', {'tenant':'alpha','session_id':'x','action_ids':['a']}),
             ('/api/demo/inject-shadow-route', {}),
+            ('/api/demo/reset', {'tenant':'alpha'}),
         ]
         for path,body in scenarios:
             response=client.post(path,json=body)

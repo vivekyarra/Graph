@@ -1,14 +1,14 @@
 # Maelin — judge evidence packet
 
-**Track 01: Agents That Act on Connected Data. Track 02: Agent Memory and Coordination.**
+**Track 01: Agents That Act on Connected Data. Track 02: Agent Memory and Coordination. Track 03: Company Brain (Knowledge Graph).**
 
 ## What to show live
 
-Start the Docker Compose or hosted demo and demonstrate **a real FalkorDB query for the paths**, **an actual MCP tool call**, **an authenticated scene selection**, **the cut applied to a copied graph**, and **a repeated incident whose policy changes because of persisted graph experience**.
+Start the Docker Compose or hosted demo and demonstrate **a real FalkorDB query for the paths**, **an actual MCP tool call**, **an authenticated scene selection**, **the cut applied to a copied graph**, **a repeated incident whose policy changes because of persisted graph experience**, and **the team ownership knowledge graph mapping accountable teams to assets**.
 
 ### Track 01 — what the graph does
 
-Each Recon query uses FalkorDB Cypher to find paths from entry to target passing through the selected compromised asset (depth <=7, max 256 records). A separate query finds business-flow dependencies (max 1024). Remediation enumerates every bounded action combination and refuses those that leave a known compromised route uncovered. Replaying an action creates a new FalkorDB graph, makes Cypher DELETE modifications, and independently queries reachable paths after the change. A newly injected pivot must make the old cut incomplete.
+Each Recon query uses FalkorDB Cypher to find paths from entry to target passing through the selected compromised asset (depth <=7, max 256 records). A separate query finds business-flow dependencies (max 1024). Remediation enumerates every bounded action combination and refuses those that leave a known compromised route uncovered. Replaying an action creates a new FalkorDB graph, makes Cypher DELETE modifications, and independently queries reachable paths after the change. A newly injected pivot must make the old cut incomplete. Track 01 also exposes native FalkorDB PageRank centrality via `compute_asset_centrality` (`CALL algo.pageRank('Asset', 'DEPENDS_ON')`).
 
 **Demonstration:** first incident returns two paths; a surgical pair cuts both, while blanket quarantine interrupts modeled customer flows. Inject the shadow route and repeat: three paths now exist. User can also choose a different node or import an entirely separate synthetic topology.
 
@@ -25,6 +25,12 @@ In Docker Compose and the standalone demo, Recon/Memory/Remediation use `MAELIN_
 - `SemanticPattern` → `REMEMBERS` → `Episode`: bounded generalization by asset kind/role.
 
 Compare the same current graph with and without memory to establish whether the decision change is explained by past operator reports. Show tenant Beta with no leaked Alpha memory. Graphs are scoped to tenants and outcomes to actual offered session actions.
+
+### Track 03 — Company Brain (Organizational Knowledge Graph)
+
+- `(:Team {id, name, lead, contact})-[:OWNS]->(:Asset {id})`: Connects technical services and customer revenue flows to responsible humans and teams.
+- Queryable via `get_team_ownership` MCP tool and `/api/teams` endpoint.
+- Connects incident history and postmortems directly to accountable owners (e.g. Identity-SecOps, Payments Core, Data Infra).
 
 ### Inspect tests rather than screenshots alone
 

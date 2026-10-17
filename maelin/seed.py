@@ -13,8 +13,9 @@ def dataset():
     return json.loads(DATA.read_text(encoding="utf-8"))
 
 
-def seed_tenant(tenant: str = "alpha", reset: bool = False, file: Path | None = None):
-    store = Store(os.getenv("FALKOR_HOST", "localhost"), int(os.getenv("FALKOR_PORT", "6379")), os.getenv("FALKOR_PASSWORD"))
+def seed_tenant(tenant: str = "alpha", reset: bool = False, file: Path | None = None, store: Store | None = None):
+    if store is None:
+        store = Store(os.getenv("FALKOR_HOST", "localhost"), int(os.getenv("FALKOR_PORT", "6379")), os.getenv("FALKOR_PASSWORD"))
     data = validate_dataset(json.loads(file.read_text(encoding='utf-8'))) if file else dataset()
     store.seed(tenant, data, reset=reset)
     return store

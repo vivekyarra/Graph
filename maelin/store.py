@@ -24,7 +24,13 @@ def _format_nodes(nodes):
     for n in nodes:
         if hasattr(n, "properties"):
             p = dict(n.properties)
-            p.setdefault("id", getattr(n, "id", None) or p.get("id"))
+            nid = p.get("id")
+            if nid is None:
+                nid = getattr(n, "id", None)
+            if nid is not None:
+                p.setdefault("id", nid)
+            if hasattr(n, "labels") and n.labels:
+                p.setdefault("labels", list(n.labels))
             out.append(p)
         elif isinstance(n, dict):
             out.append(n)
@@ -40,7 +46,24 @@ def _format_rels(rels):
     for r in rels:
         if hasattr(r, "properties"):
             p = dict(r.properties)
-            p.setdefault("edge_id", p.get("edge_id", getattr(r, "id", None)))
+            eid = p.get("edge_id")
+            if eid is None:
+                eid = getattr(r, "id", None)
+            if eid is not None:
+                p.setdefault("edge_id", eid)
+            rel_type = getattr(r, "relation", None) or getattr(r, "type", None)
+            if rel_type:
+                p.setdefault("relation", rel_type)
+            src = getattr(r, "src_node", None)
+            dest = getattr(r, "dest_node", None)
+            if src is not None:
+                src_id = src.properties.get("id") if hasattr(src, "properties") else getattr(src, "id", None)
+                if src_id is not None:
+                    p.setdefault("from", src_id)
+            if dest is not None:
+                dest_id = dest.properties.get("id") if hasattr(dest, "properties") else getattr(dest, "id", None)
+                if dest_id is not None:
+                    p.setdefault("to", dest_id)
             out.append(p)
         elif isinstance(r, dict):
             out.append(r)

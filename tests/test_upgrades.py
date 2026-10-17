@@ -272,3 +272,60 @@ def test_ui_contains_reset_button_and_wiring():
     assert "resetDemoState" in index_html
     assert "/api/demo/reset" in index_html
     assert "resetDemo" in cockpit_js
+    assert "hudWired" in index_html
+    assert "hudWired" in cockpit_js
+
+
+def test_provenance_formatter_handles_zero_id_and_labels_and_relation():
+    from maelin.store import _format_nodes, _format_rels
+    import falkordb
+
+    node0 = falkordb.node.Node(node_id=0, labels=["Asset"], properties={"kind": "service"})
+    formatted_nodes = _format_nodes([node0])
+    assert len(formatted_nodes) == 1
+    assert formatted_nodes[0]["id"] == 0
+    assert formatted_nodes[0]["labels"] == ["Asset"]
+    assert formatted_nodes[0]["kind"] == "service"
+
+    node1 = falkordb.node.Node(node_id=1, properties={"id": "auth-service"})
+    node2 = falkordb.node.Node(node_id=2, properties={"id": "customer-db"})
+    edge = falkordb.edge.Edge(src_node=node1, relation="CAN_PIVOT", dest_node=node2, edge_id=10, properties={"edge_id": "p2", "evidence": "test"})
+    formatted_rels = _format_rels([edge])
+    assert len(formatted_rels) == 1
+    assert formatted_rels[0]["edge_id"] == "p2"
+    assert formatted_rels[0]["relation"] == "CAN_PIVOT"
+    assert formatted_rels[0]["from"] == "auth-service"
+    assert formatted_rels[0]["to"] == "customer-db"
+
+
+def test_recon_agent_records_full_cypher_provenance_query():
+    from maelin.agents import ReconAgent
+
+    recorded_handoffs = []
+    class MockStore:
+        def attack_paths(self, t, s, v, d):
+            return [{"nodes": ["internet", "auth-service"], "edges": ["p1"], "edge_evidence": ["test"], "path_nodes": [], "path_relationships": []}]
+        def business_paths(self, t):
+            return [{"flow": "checkout", "value": 80, "nodes": ["checkout", "auth-service"]}]
+        def handoff(self, tenant, sid, agent, status, payload):
+            recorded_handoffs.append((agent, status, payload))
+
+    agent = ReconAgent()
+    agent.run(MockStore(), "alpha", "session-1", SCENE)
+    assert len(recorded_handoffs) == 1
+    payload = recorded_handoffs[0][2]
+    assert "nodes(p) AS path_nodes" in payload["cypher_query"]
+    assert "relationships(p) AS path_relationships" in payload["cypher_query"]
+
+
+def test_seed_tenant_accepts_store_instance():
+    from maelin.seed import seed_tenant
+
+    seeded = []
+    class MockStore:
+        def seed(self, tenant, data, reset=False):
+            seeded.append((tenant, reset))
+
+    mock_store = MockStore()
+    seed_tenant("alpha", reset=True, store=mock_store)
+    assert seeded == [("alpha", True)]

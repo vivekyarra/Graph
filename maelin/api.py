@@ -228,8 +228,9 @@ def reset_demo_state(req: DemoReset, request: Request):
     if os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS", "1") != "1":
         raise HTTPException(403, "Demo reset disabled; trusted demo mode only")
     try:
+        from .seed import seed_tenant, dataset
+        seed_tenant(tenant=req.tenant, reset=True, store=store())
         data = dataset()
-        store().seed(req.tenant, data, reset=True)
         return {
             "status": "reset_successful",
             "tenant": req.tenant,

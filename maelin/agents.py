@@ -39,9 +39,10 @@ class ReconAgent:
             "verified_path_payload":paths,"customer_dependency_payload":business,
             "agent_reasoning":synthesize_recon_insight(paths,business,scene),
             "cypher_query":"MATCH p=(s:Asset {id:$source})-[:CAN_PIVOT*1..7]->(t:Asset {id:$target}) "
-                "WITH p WHERE ANY(n IN nodes(p) WHERE n.id=$vulnerable) "
-                "RETURN [n IN nodes(p)|n.id], [r IN relationships(p)|r.edge_id] "
-                "LIMIT 257 -- vulnerable: "+scene["vulnerable"],
+                "WITH p WHERE ANY(n IN nodes(p) WHERE n.id = $vulnerable) "
+                "RETURN [n IN nodes(p) | n.id] AS assets, [r IN relationships(p) | r.edge_id] AS pivots, "
+                "[r IN relationships(p) | r.evidence] AS edge_evidence, nodes(p) AS path_nodes, "
+                "relationships(p) AS path_relationships LIMIT 257 -- vulnerable: "+scene["vulnerable"],
             "query_parameters":{"source":scene["source"],"target":scene["target"],
                 "vulnerable":scene["vulnerable"]},
             "source":scene["source"], "vulnerable":scene["vulnerable"], "target":scene["target"],
