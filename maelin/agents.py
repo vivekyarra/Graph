@@ -1,23 +1,50 @@
 """Three bounded specialist agents, sharing context only through FalkorDB.
 
 Agents communicate exclusively through immutable graph handoffs stored in FalkorDB's
-swarm memory graph. Supports agentic reasoning synthesis and LLM adjudication.
+swarm memory graph. Supports agentic reasoning synthesis, MCP tool bridge, and LLM adjudication.
 """
+import os
 from .logic import analyze
 from .llm import (
     adjudicate,
+    narrate,
     synthesize_recon_insight,
     synthesize_memory_insight,
     synthesize_remediation_insight,
 )
 
 
+def graph_tool(store, tenant, sid, name, parameters, direct, result_key):
+    if os.getenv("MAELIN_AGENT_TOOLS", "direct") != "mcp":
+        return direct()
+    from .store import Store
+    if not isinstance(store, Store):  # Offline test doubles cannot serve the real MCP transport.
+        return direct()
+    from .mcp_client import call_tool
+    result = call_tool(name, {"tenant": tenant, **parameters})
+    if result_key not in result or not isinstance(result[result_key], list):
+        raise RuntimeError("Invalid MCP graph tool evidence")
+    store.handoff(tenant, sid, "mcp", "tool_called", {
+        "transport": "stdio", "tool": name, "arguments": parameters,
+        "returned_records": len(result[result_key])})
+    return result[result_key]
+
+
 class ReconAgent:
     name = "recon"
 
     def run(self, store, tenant, sid, scene):
-        paths = store.attack_paths(tenant, scene["source"], scene["vulnerable"], scene["target"])
-        business = store.business_paths(tenant)
+        paths = graph_tool(
+            store, tenant, sid, "inspect_attack_paths",
+            {"source": scene["source"], "vulnerable": scene["vulnerable"], "target": scene["target"]},
+            lambda: store.attack_paths(tenant, scene["source"], scene["vulnerable"], scene["target"]),
+            "paths"
+        )
+        business = graph_tool(
+            store, tenant, sid, "inspect_business_dependencies", {},
+            lambda: store.business_paths(tenant),
+            "dependency_paths"
+        )
         insight = synthesize_recon_insight(paths, business, scene)
         cypher_q = (
             f"MATCH p=(s:Asset {{id:'{scene['source']}'}})-[:CAN_PIVOT*1..7]->(t:Asset {{id:'{scene['target']}'}}) "
@@ -34,7 +61,12 @@ class ReconAgent:
             "source": scene["source"],
             "vulnerable": scene["vulnerable"],
             "target": scene["target"],
-            "query_limits": "max depth 7, max 256 threat paths, max 1024 business paths"
+            "query_limits": "max depth 7, max 256 threat paths, max 1024 business paths",
+            "llm_analysis": narrate("recon", {
+                "source": scene["source"], "vulnerable": scene["vulnerable"],
+                "target": scene["target"], "attack_paths": len(paths),
+                "business_dependencies": len(business)
+            })
         })
         return paths, business
 
@@ -49,17 +81,26 @@ class MemoryAgent:
         if not any(h["agent"] == "recon" and h["status"] == "mapped" for h in ledger):
             raise RuntimeError("Recon graph handoff missing; cannot coordinate")
         vuln = scene.get("vulnerable")
-        try:
-            prior = store.recall(tenant, scene["fingerprint"], component=vuln)
-        except TypeError:
-            prior = store.recall(tenant, scene["fingerprint"])
+        def _recall():
+            try:
+                return store.recall(tenant, scene["fingerprint"], component=vuln)
+            except TypeError:
+                return store.recall(tenant, scene["fingerprint"])
+
+        prior = graph_tool(
+            store, tenant, sid, "recall_incident_outcomes",
+            {"fingerprint": scene["fingerprint"], "component": vuln},
+            _recall,
+            "precedents"
+        )
         insight = synthesize_memory_insight(prior, scene["fingerprint"])
         store.handoff(tenant, sid, self.name, "recalled", {
             "fingerprint": scene["fingerprint"],
             "precedents": len(prior),
             "reported_failures": sum(x["outcome"] == "unexpected_outage" for x in prior),
             "recalled_experiences": prior,
-            "agent_reasoning": insight
+            "agent_reasoning": insight,
+            "llm_analysis": narrate("memory", {"precedents": prior[:10]})
         })
         return prior
 
@@ -78,7 +119,11 @@ class RemediationAgent:
         paths = recon["payload"]["verified_path_payload"]
         business = recon["payload"]["customer_dependency_payload"]
         precedent = memory["payload"]["recalled_experiences"]
-        interventions = store.interventions(tenant)
+        interventions = graph_tool(
+            store, tenant, sid, "list_candidate_interventions", {},
+            lambda: store.interventions(tenant),
+            "interventions"
+        )
         result = analyze(paths, business, interventions, precedent)
 
         # Controlled ablation: same live graph and action catalog, with the
@@ -123,6 +168,8 @@ def investigate(store, tenant, scene, goal="minimize customer disruption"):
     if not store.ready(tenant):
         raise LookupError("Graph not seeded: run python -m maelin.seed")
     sid = store.new_session(tenant, scene["fingerprint"])
+    if hasattr(store, "set_session_scene"):
+        store.set_session_scene(tenant, sid, scene)
     paths, business = ReconAgent().run(store, tenant, sid, scene)
     memory = MemoryAgent().run(store, tenant, sid, scene)
     result = RemediationAgent().run(store, tenant, sid, scene, goal)

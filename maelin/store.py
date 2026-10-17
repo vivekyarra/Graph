@@ -78,7 +78,7 @@ ORDER BY a.id""").result_set
 
     def recall(self, tenant, fingerprint, component=None):
         _, g = self.graphs(tenant)
-        rows = g.ro_query("""MATCH (e:Episode {fingerprint:$fingerprint})-[:OBSERVED]->(a:ActionExperience)
+        rows = g.ro_query("""MATCH (p:IncidentPattern {fingerprint:$fingerprint})-[:HAS_EPISODE]->(e:Episode)-[:OBSERVED]->(a:ActionExperience)
 RETURN a.action_id, a.outcome, a.cost_observed, a.evidence_status, e.created, e.id
 ORDER BY e.created DESC LIMIT 30""", {"fingerprint":fingerprint}).result_set
         if not rows and component:
@@ -95,6 +95,24 @@ ORDER BY e.created DESC LIMIT 30""", {"component":component}).result_set
         g.query("CREATE (:Session {id:$id, fingerprint:$fingerprint, created:$created})",
                 {"id":sid,"fingerprint":fingerprint,"created":iso_now()})
         return sid
+
+    def set_session_scene(self, tenant, session, scene):
+        _, g = self.graphs(tenant)
+        g.query("""MATCH (s:Session {id:$session})
+SET s.source=$source, s.vulnerable=$vulnerable, s.target=$target, s.scenario=$scenario""",
+                {"session":session, "source":scene["source"], "vulnerable":scene["vulnerable"],
+                 "target":scene["target"], "scenario":scene["scenario"]})
+
+    def session_scene(self, tenant, session):
+        _, g = self.graphs(tenant)
+        rows = g.ro_query("""MATCH (s:Session {id:$session})
+RETURN s.source, s.vulnerable, s.target, s.fingerprint, s.scenario""",
+                          {"session":session}).result_set
+        if len(rows) != 1 or any(value is None for value in rows[0][:4]):
+            raise ValueError("Unknown session or missing graph-bound incident context")
+        row = rows[0]
+        return {"source":row[0], "vulnerable":row[1], "target":row[2],
+                "fingerprint":row[3], "scenario":row[4] or "Graph incident"}
 
     def handoff(self, tenant, session, agent, status, payload):
         _, g = self.graphs(tenant)
@@ -147,6 +165,17 @@ MERGE (s)-[:RESULTED_IN]->(e)
 MERGE (e)-[:OBSERVED]->(a)""",
                 {"session":session,"episode":episode,"fingerprint":fingerprint,
                  "created":iso_now(),"note":note,"action_id":action_id,"outcome":outcome,"cost":cost})
+        # Procedural memory is an actual Cypher-queryable incident/action subgraph.
+        # Only immutable episode evidence can support a reusable procedure.
+        g.query("""MATCH (e:Episode {id:$episode})-[:OBSERVED]->(a:ActionExperience)
+MERGE (pattern:IncidentPattern {fingerprint:$fingerprint})
+MERGE (procedure:Procedure {key:$procedure_key})
+ON CREATE SET procedure.action_id=$action_id, procedure.review_policy='review_after_report'
+MERGE (pattern)-[:HAS_EPISODE]->(e)
+MERGE (pattern)-[:HAS_PROCEDURE]->(procedure)
+MERGE (procedure)-[:SUPPORTED_BY]->(a)""",
+                {"episode":episode,"fingerprint":fingerprint,
+                 "procedure_key":fingerprint+":"+action_id,"action_id":action_id})
         verified = g.ro_query("""MATCH (s:Session {id:$session, fingerprint:$fingerprint})
 -[:RESULTED_IN]->(e:Episode {id:$episode})-[:OBSERVED]->(a:ActionExperience)
 RETURN a.action_id, a.outcome, a.cost_observed""",

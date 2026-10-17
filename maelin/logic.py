@@ -40,7 +40,9 @@ def analyze(paths, business_paths, actions, precedents=(), max_actions=3):
     for m in precedents:
         if m.get("outcome") == "unexpected_outage":
             # A single verified failure matters more than many guesses of success.
-            bad[m["action_id"]] = min(120, bad.get(m["action_id"], 0) + 60)
+            reported = m.get("cost_observed", 60)
+            loss = min(120, max(60, reported if _nonnegative_number(reported) else 60))
+            bad[m["action_id"]] = min(120, bad.get(m["action_id"], 0) + loss)
     plans = []
     for n in range(1, min(max_actions, len(actions)) + 1):
         for group in combinations(actions, n):
@@ -81,8 +83,3 @@ def analyze(paths, business_paths, actions, precedents=(), max_actions=3):
     return {"plans": pareto[:15], "recommended": pareto[0] if pareto else None,
             "reason": "evaluated" if pareto else "no_complete_containment_within_action_limit"}
 
-
-def traversal_fallback(dataset, *, depth=7):
-    """Offline test-only oracle. Production execution runs strictly against FalkorDB."""
-    from tests.helpers import traversal_fallback as _tf
-    return _tf(dataset, depth=depth)

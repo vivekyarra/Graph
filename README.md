@@ -1,4 +1,31 @@
-# Maelin — See what breaks before you fix what’s broken
+# Maelin: Graph-native incident decision engine
+
+Maelin is a working graph-backed incident-response demonstrator. **Choose a source, suspected compromised node, and target** from the FalkorDB topology, or click a graph node to investigate its pivot routes. An optional alert summary travels with the incident. The graph discovers the possible attack routes and business dependencies with bounded Cypher; Maelin ranks only interventions that cut *every discovered route*.
+
+## What is now live in the architecture
+
+- **MCP tool execution:** the Docker Compose agent pipeline calls four typed graph tools through a real MCP client/server stdio session. Each invocation produces an inspectable, persisted `mcp / tool_called` entry in the agent handoff ledger. MCP failures stop the investigation rather than silently producing local graph guesses.
+- **Three specialist agents:** Recon gathers graph evidence, Memory recalls graph-linked prior episodes and procedures, and Remediation evaluates safe graph cuts. With `OPENAI_API_KEY` configured, Recon and Memory add bounded LLM interpretations and Remediation uses validated tool-call plan selection. Without a model key the UI accurately reports deterministic policy mode; no AI inference is claimed.
+- **Graph-native procedural experience:** `IncidentPattern` nodes link to `Procedure` and `Episode` evidence in the isolated FalkorDB memory graph. Reports remain identified as operator-supplied and scoped to their incident fingerprint and tenant.
+- **Bounded counterfactual simulation:** proposed cuts are applied only to a disposable copy of the FalkorDB graph, then queried again to measure remaining routes and impacted customer flows.
+- **Dynamic incident input:** `POST /api/investigate` accepts `source`, `vulnerable`, `target`, and `alert` in addition to `tenant` and `goal`; named assets are validated against the queried live graph. Simulation and outcomes use the exact scene persisted on their session.
+
+## Run and verify
+
+```bash
+docker compose up -d --build
+docker compose exec -T app python -m maelin.seed --tenant alpha
+docker compose exec -T app python -m maelin.seed --tenant beta
+```
+
+Open http://127.0.0.1:8000. To use real model reasoning as well as MCP tool access, supply `OPENAI_API_KEY` to Compose. The integration workflow runs real FalkorDB, Python tests, graph-replay judge proofs, a Dockerized API and headless Chromium. For a public deployment, remove local-demo configuration, require a strong `MAELIN_OPERATOR_TOKEN`, restrict FalkorDB network access, and terminate TLS at a trusted proxy.
+
+## Submission vision
+
+**See the consequences. Remember the cost.** Maelin connects explainable attack-path discovery with graph-native incident memories and human-reviewed counterfactual repairs. Its demo scenario is synthetic by design; live graph connectivity, the MCP call ledger, and replayed Cypher cuts are concrete technical demonstrations, not claims of action on real customer infrastructure.
+
+---
+
 
 **Graph Hacks: Context for AI Agents** (WeMakeDevs × FalkorDB, Oct 15–18, 2026)
 

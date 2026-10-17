@@ -68,6 +68,33 @@ def synthesize_remediation_insight(recommended_plan: dict | None, naive_plan: di
     )
 
 
+def model_enabled():
+    has_key = bool(os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY"))
+    return has_key and os.getenv("MAELIN_USE_LLM", "auto").lower() not in {"0", "off", "false"}
+
+
+def narrate(role, evidence):
+    """Evidence-bound specialist interpretation, never graph writes or unsafe actions."""
+    if not model_enabled():
+        return None
+    try:
+        from openai import OpenAI
+        response = OpenAI(timeout=12.0).chat.completions.create(
+            model=os.getenv("MAELIN_LLM_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role":"system", "content": (
+                    "You are a specialist incident-response reasoning agent. Your role: " + role +
+                    ". Interpret only supplied SYNTHETIC graph evidence, acknowledge missing facts, "
+                    "and propose one verification question. Limit to 75 words. Never invent findings or perform changes.")},
+                {"role":"user", "content":json.dumps(evidence)}
+            ], temperature=0)
+        return str(response.choices[0].message.content or "")[:600]
+    except Exception as exc:
+        return "LLM unavailable (" + type(exc).__name__ + "); verified graph evidence remains authoritative."
+
+
+
+
 def adjudicate(plans, goal="minimize customer disruption"):
     """Select the optimal admissible plan based on operator priorities and graph safety constraints."""
     if not plans:
@@ -91,8 +118,7 @@ def adjudicate(plans, goal="minimize customer disruption"):
         )
     }
 
-    # If LLM execution is not explicitly requested, return deterministic safety kernel output
-    if os.getenv("MAELIN_USE_LLM") != "1":
+    if not model_enabled():
         return deterministic
 
     # Check for Google Gemini API key
