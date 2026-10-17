@@ -87,6 +87,8 @@ def investigate(store, tenant, scene, goal="minimize customer disruption"):
     if not store.ready(tenant):
         raise LookupError("Graph not seeded: run python -m maelin.seed")
     sid = store.new_session(tenant, scene["fingerprint"])
+    if hasattr(store, "set_session_scene"):
+        store.set_session_scene(tenant, sid, scene)
     paths, business = ReconAgent().run(store,tenant,sid,scene)
     memory = MemoryAgent().run(store,tenant,sid,scene)
     result = RemediationAgent().run(store,tenant,sid,scene,goal)
