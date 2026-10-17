@@ -1,12 +1,17 @@
 """Three bounded specialist agents, sharing context only through FalkorDB.
 
-Deterministic specialist policies are disclosed: these are tool-using agents,
-not three separate LLM calls masquerading as experts. Optional language-model
-integration can be layered on top without granting it direct Cypher access.
+Agents communicate exclusively through immutable graph handoffs stored in FalkorDB's
+swarm memory graph. Supports agentic reasoning synthesis, MCP tool bridge, and LLM adjudication.
 """
-from .logic import analyze
-from .llm import adjudicate, narrate
 import os
+from .logic import analyze
+from .llm import (
+    adjudicate,
+    narrate,
+    synthesize_recon_insight,
+    synthesize_memory_insight,
+    synthesize_remediation_insight,
+)
 
 
 def graph_tool(store, tenant, sid, name, parameters, direct, result_key):
@@ -16,68 +21,111 @@ def graph_tool(store, tenant, sid, name, parameters, direct, result_key):
     if not isinstance(store, Store):  # Offline test doubles cannot serve the real MCP transport.
         return direct()
     from .mcp_client import call_tool
-    result = call_tool(name, {"tenant":tenant, **parameters})
+    result = call_tool(name, {"tenant": tenant, **parameters})
     if result_key not in result or not isinstance(result[result_key], list):
         raise RuntimeError("Invalid MCP graph tool evidence")
     store.handoff(tenant, sid, "mcp", "tool_called", {
-        "transport":"stdio", "tool":name, "arguments":parameters,
-        "returned_records":len(result[result_key])})
+        "transport": "stdio", "tool": name, "arguments": parameters,
+        "returned_records": len(result[result_key])})
     return result[result_key]
 
 
 class ReconAgent:
     name = "recon"
+
     def run(self, store, tenant, sid, scene):
-        paths = graph_tool(store, tenant, sid, "inspect_attack_paths",
-            {"source":scene["source"],"vulnerable":scene["vulnerable"],"target":scene["target"]},
-            lambda:store.attack_paths(tenant,scene["source"],scene["vulnerable"],scene["target"]), "paths")
-        business = graph_tool(store, tenant, sid, "inspect_business_dependencies", {},
-            lambda:store.business_paths(tenant), "dependency_paths")
+        paths = graph_tool(
+            store, tenant, sid, "inspect_attack_paths",
+            {"source": scene["source"], "vulnerable": scene["vulnerable"], "target": scene["target"]},
+            lambda: store.attack_paths(tenant, scene["source"], scene["vulnerable"], scene["target"]),
+            "paths"
+        )
+        business = graph_tool(
+            store, tenant, sid, "inspect_business_dependencies", {},
+            lambda: store.business_paths(tenant),
+            "dependency_paths"
+        )
+        insight = synthesize_recon_insight(paths, business, scene)
+        cypher_q = (
+            f"MATCH p=(s:Asset {{id:'{scene['source']}'}})-[:CAN_PIVOT*1..7]->(t:Asset {{id:'{scene['target']}'}}) "
+            f"WITH p WHERE ANY(n IN nodes(p) WHERE n.id = '{scene['vulnerable']}') "
+            f"RETURN [n IN nodes(p) | n.id] AS assets, [r IN relationships(p) | r.edge_id] AS pivots LIMIT 257"
+        )
         store.handoff(tenant, sid, self.name, "mapped", {
-            "threat_paths":len(paths), "business_dependencies":len(business),
-            "verified_path_payload":paths,"customer_dependency_payload":business,
-            "source":scene["source"], "vulnerable":scene["vulnerable"], "target":scene["target"],
-            "query_limits":"max depth 7, max 256 threat paths, max 1024 business paths",
-            "llm_analysis":narrate("recon",{"source":scene["source"],"vulnerable":scene["vulnerable"],
-                "target":scene["target"],"attack_paths":len(paths),"business_dependencies":len(business)})})
+            "threat_paths": len(paths),
+            "business_dependencies": len(business),
+            "verified_path_payload": paths,
+            "customer_dependency_payload": business,
+            "agent_reasoning": insight,
+            "cypher_query": cypher_q,
+            "source": scene["source"],
+            "vulnerable": scene["vulnerable"],
+            "target": scene["target"],
+            "query_limits": "max depth 7, max 256 threat paths, max 1024 business paths",
+            "llm_analysis": narrate("recon", {
+                "source": scene["source"], "vulnerable": scene["vulnerable"],
+                "target": scene["target"], "attack_paths": len(paths),
+                "business_dependencies": len(business)
+            })
+        })
         return paths, business
 
 
 class MemoryAgent:
     name = "memory"
+
     def run(self, store, tenant, sid, scene):
         # The next specialist MUST retrieve the Recon handoff from the durable
         # memory graph; no hidden in-process shared state between specialists.
         ledger = store.history(tenant, sid)
-        if not any(h["agent"]=="recon" and h["status"]=="mapped" for h in ledger):
+        if not any(h["agent"] == "recon" and h["status"] == "mapped" for h in ledger):
             raise RuntimeError("Recon graph handoff missing; cannot coordinate")
-        prior = graph_tool(store, tenant, sid, "recall_incident_outcomes",
-            {"fingerprint":scene["fingerprint"]},
-            lambda:store.recall(tenant,scene["fingerprint"]), "precedents")
+        vuln = scene.get("vulnerable")
+        def _recall():
+            try:
+                return store.recall(tenant, scene["fingerprint"], component=vuln)
+            except TypeError:
+                return store.recall(tenant, scene["fingerprint"])
+
+        prior = graph_tool(
+            store, tenant, sid, "recall_incident_outcomes",
+            {"fingerprint": scene["fingerprint"], "component": vuln},
+            _recall,
+            "precedents"
+        )
+        insight = synthesize_memory_insight(prior, scene["fingerprint"])
         store.handoff(tenant, sid, self.name, "recalled", {
-            "fingerprint":scene["fingerprint"],"precedents":len(prior),
-            "reported_failures":sum(x["outcome"]=="unexpected_outage" for x in prior),
-            "recalled_experiences":prior,
-            "llm_analysis":narrate("memory",{"precedents":prior[:10]})})
+            "fingerprint": scene["fingerprint"],
+            "precedents": len(prior),
+            "reported_failures": sum(x["outcome"] == "unexpected_outage" for x in prior),
+            "recalled_experiences": prior,
+            "agent_reasoning": insight,
+            "llm_analysis": narrate("memory", {"precedents": prior[:10]})
+        })
         return prior
 
 
 class RemediationAgent:
     name = "remediation"
+
     def run(self, store, tenant, sid, scene, goal):
         # Both path evidence and learned procedural constraints arrive through
         # an explicit persisted graph handoff, NOT Python arguments.
-        ledger=store.history(tenant,sid)
-        recon=next((h for h in ledger if h["agent"]=="recon"), None)
-        memory=next((h for h in ledger if h["agent"]=="memory"), None)
+        ledger = store.history(tenant, sid)
+        recon = next((h for h in ledger if h["agent"] == "recon"), None)
+        memory = next((h for h in ledger if h["agent"] == "memory"), None)
         if not recon or not memory:
             raise RuntimeError("Required graph handoff missing: refusing remediation")
-        paths=recon["payload"]["verified_path_payload"]
-        business=recon["payload"]["customer_dependency_payload"]
-        precedent=memory["payload"]["recalled_experiences"]
-        interventions = graph_tool(store, tenant, sid, "list_candidate_interventions", {},
-            lambda:store.interventions(tenant), "interventions")
+        paths = recon["payload"]["verified_path_payload"]
+        business = recon["payload"]["customer_dependency_payload"]
+        precedent = memory["payload"]["recalled_experiences"]
+        interventions = graph_tool(
+            store, tenant, sid, "list_candidate_interventions", {},
+            lambda: store.interventions(tenant),
+            "interventions"
+        )
         result = analyze(paths, business, interventions, precedent)
+
         # Controlled ablation: same live graph and action catalog, with the
         # recalled memory removed. This is a causal policy comparison, not a
         # claim that the operator's report is independently verified.
@@ -97,15 +145,22 @@ class RemediationAgent:
         naive = next((a for a in interventions if a["id"] == "quarantine-auth"), None)
         baseline = analyze(paths, business, [naive], ()) if naive else None
         result["naive_emergency_brake"] = baseline["recommended"] if baseline else None
-        result["agent_choice"] = adjudicate(result["plans"],goal)
+        result["agent_choice"] = adjudicate(result["plans"], goal)
+
+        remediation_insight = synthesize_remediation_insight(result["recommended"], result["naive_emergency_brake"])
+        result["agent_reasoning"] = remediation_insight
+
         # The approved action IDs are persisted as a session-scoped graph handoff.
         offered = sorted(set(id for p in result["plans"] for id in p["action_ids"]))
         store.proposed(tenant, sid, offered)
         store.handoff(tenant, sid, self.name, "proposed", {
-            "candidate_plans":len(result["plans"]),
-            "recommended":result["recommended"]["action_ids"] if result["recommended"] else None,
-            "outcome":result["reason"],"agent_choice":result["agent_choice"],
-            "memory_ablation":result["memory_ablation"]})
+            "candidate_plans": len(result["plans"]),
+            "recommended": result["recommended"]["action_ids"] if result["recommended"] else None,
+            "outcome": result["reason"],
+            "agent_choice": result["agent_choice"],
+            "agent_reasoning": remediation_insight,
+            "memory_ablation": result["memory_ablation"]
+        })
         return result
 
 
@@ -115,10 +170,17 @@ def investigate(store, tenant, scene, goal="minimize customer disruption"):
     sid = store.new_session(tenant, scene["fingerprint"])
     if hasattr(store, "set_session_scene"):
         store.set_session_scene(tenant, sid, scene)
-    paths, business = ReconAgent().run(store,tenant,sid,scene)
-    memory = MemoryAgent().run(store,tenant,sid,scene)
-    result = RemediationAgent().run(store,tenant,sid,scene,goal)
-    return {"session_id":sid,"scene":scene["scenario"],"paths":paths,"business_paths":business,
-            "precedents":memory,"analysis":result,"handoffs":store.history(tenant,sid),
-            "safety":"Simulation and recommendations only. Never modifies infrastructure.",
-            "scope":"Synthetic graph snapshot; bounded paths. Unknown topology is not proof of safety."}
+    paths, business = ReconAgent().run(store, tenant, sid, scene)
+    memory = MemoryAgent().run(store, tenant, sid, scene)
+    result = RemediationAgent().run(store, tenant, sid, scene, goal)
+    return {
+        "session_id": sid,
+        "scene": scene["scenario"],
+        "paths": paths,
+        "business_paths": business,
+        "precedents": memory,
+        "analysis": result,
+        "handoffs": store.history(tenant, sid),
+        "safety": "Simulation and recommendations only. Never modifies infrastructure.",
+        "scope": "Synthetic graph snapshot; bounded paths. Unknown topology is not proof of safety."
+    }

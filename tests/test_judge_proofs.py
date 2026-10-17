@@ -87,7 +87,7 @@ def test_graph_write_routes_blocked_without_operator_even_if_demo_toggle_set(mon
 
 
 def test_ui_exposes_memory_ablation_and_evidence_disclaimer():
-    ui=(Path(__file__).parents[1]/'static'/'index.html').read_text()
+    ui=(Path(__file__).parents[1]/'static'/'index.html').read_text(encoding='utf-8')
     assert 'memory_ablation' in ui
     assert 'Without memory' in ui and 'With memory' in ui
     assert 'reports are not independent forensic proof' in ui

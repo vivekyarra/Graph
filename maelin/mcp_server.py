@@ -11,7 +11,9 @@ mcp = FastMCP("MAELIN Graph Reasoning")
 def inspect_attack_paths(tenant: str = "alpha", source: str = "internet",
                          vulnerable: str = "auth-service", target: str = "customer-db") -> dict:
     """Enumerate bounded graph-derived paths for a selected incident."""
-    return {"paths": store().attack_paths(tenant, source, vulnerable, target)}
+    return {"paths": store().attack_paths(tenant, source, vulnerable, target),
+            "source": source, "vulnerable": vulnerable, "target": target,
+            "limit": "7 hops, up to 256 matching paths"}
 
 
 @mcp.tool()
@@ -22,9 +24,10 @@ def inspect_business_dependencies(tenant: str = "alpha") -> dict:
 
 @mcp.tool()
 def recall_incident_outcomes(tenant: str = "alpha",
-                             fingerprint: str = "exploited-identity-to-customer-db") -> dict:
+                             fingerprint: str = "exploited-identity-to-customer-db",
+                             component: str | None = None) -> dict:
     """Read tenant-scoped graph procedural and episodic evidence."""
-    return {"precedents": store().recall(tenant, fingerprint)}
+    return {"precedents": store().recall(tenant, fingerprint, component=component)}
 
 
 @mcp.tool()
@@ -34,9 +37,26 @@ def list_candidate_interventions(tenant: str = "alpha") -> dict:
 
 
 @mcp.tool()
-def propose_containment(tenant: str = "alpha") -> dict:
-    """Execute the bounded agent pipeline without infrastructure changes."""
-    return investigate(store(), tenant, dataset())
+def propose_containment(
+    tenant: str = "alpha",
+    goal: str = "Minimize customer disruption and remediation cost",
+    source: str | None = None,
+    vulnerable: str | None = None,
+    target: str | None = None,
+    scenario_name: str | None = None,
+) -> dict:
+    """Three-agent safety pipeline. Generates plans only; never changes live systems."""
+    d = dataset()
+    scene = dict(d)
+    if source:
+        scene["source"] = source
+    if vulnerable:
+        scene["vulnerable"] = vulnerable
+    if target:
+        scene["target"] = target
+    if scenario_name:
+        scene["scenario"] = scenario_name
+    return investigate(store(), tenant, scene, goal)
 
 
 if __name__ == "__main__":

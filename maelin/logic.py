@@ -82,3 +82,4 @@ def analyze(paths, business_paths, actions, precedents=(), max_actions=3):
         pareto.append(p)
     return {"plans": pareto[:15], "recommended": pareto[0] if pareto else None,
             "reason": "evaluated" if pareto else "no_complete_containment_within_action_limit"}
+
