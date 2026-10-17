@@ -24,6 +24,10 @@ def test_vercel_entrypoint_exposes_fastapi_app():
     assert resp_css.status_code == 200
     assert "css" in resp_css.headers.get("content-type", "").lower()
 
+    resp_js = client.get("/assets/cockpit.js")
+    assert resp_js.status_code == 200
+    assert "javascript" in resp_js.headers.get("content-type", "").lower()
+
 
 def test_vercel_json_routes_configuration():
     repo_root = Path(__file__).resolve().parent.parent
@@ -63,3 +67,16 @@ def test_static_index_persistence_advisory_references_vercel():
     index_html = (repo_root / "static" / "index.html").read_text(encoding="utf-8")
     assert "VERCEL SERVERLESS" in index_html
     assert "Render" not in index_html
+
+
+def test_deployment_documentation_updated_for_vercel():
+    repo_root = Path(__file__).resolve().parent.parent
+    readme = (repo_root / "README.md").read_text(encoding="utf-8")
+    deployment = (repo_root / "docs" / "deployment.md").read_text(encoding="utf-8")
+
+    for doc_name, text in [("README.md", readme), ("docs/deployment.md", deployment)]:
+        assert "https://vercel.com/golden-state-warriors" in text, f"{doc_name} must link to Vercel team"
+        assert "FALKOR_SSL" in text, f"{doc_name} must explain FalkorDB SSL connection"
+        assert "render.yaml" not in text.lower(), f"{doc_name} must not reference render.yaml"
+        assert "on render" not in text.lower(), f"{doc_name} must not reference on Render"
+
