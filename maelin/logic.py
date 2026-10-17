@@ -40,7 +40,9 @@ def analyze(paths, business_paths, actions, precedents=(), max_actions=3):
     for m in precedents:
         if m.get("outcome") == "unexpected_outage":
             # A single verified failure matters more than many guesses of success.
-            bad[m["action_id"]] = min(120, bad.get(m["action_id"], 0) + 60)
+            reported = m.get("cost_observed", 60)
+            loss = min(120, max(60, reported if _nonnegative_number(reported) else 60))
+            bad[m["action_id"]] = min(120, bad.get(m["action_id"], 0) + loss)
     plans = []
     for n in range(1, min(max_actions, len(actions)) + 1):
         for group in combinations(actions, n):
@@ -80,40 +82,3 @@ def analyze(paths, business_paths, actions, precedents=(), max_actions=3):
         pareto.append(p)
     return {"plans": pareto[:15], "recommended": pareto[0] if pareto else None,
             "reason": "evaluated" if pareto else "no_complete_containment_within_action_limit"}
-
-
-def traversal_fallback(dataset, *, depth=7):
-    """ONLY for offline unit tests, never used by the production API."""
-    src, dst, vuln = dataset["source"], dataset["target"], dataset["vulnerable"]
-    edges = {}
-    for e in dataset["pivot_edges"]:
-        edges.setdefault(e["from"], []).append(e)
-    found = []
-    def dfs(node, nodes, eid):
-        if node == dst:
-            if vuln in nodes:
-                found.append({"nodes": list(nodes), "edges": list(eid)})
-            return
-        if len(eid) >= depth:
-            return
-        for e in edges.get(node, []):
-            if e["to"] not in nodes:
-                dfs(e["to"], nodes + [e["to"]], eid + [e["id"]])
-    dfs(src, [src], [])
-    paths = []
-    depend = {}
-    values = {a["id"]:a.get("value",0) for a in dataset["assets"]}
-    for e in dataset["depends_edges"]:
-        depend.setdefault(e["from"], []).append(e["to"])
-    def walk(node, nodes, start):
-        if len(nodes) >= 8:
-            return
-        if len(nodes) > 1:
-            paths.append({"flow":start,"value":values[start],"nodes":nodes})
-        for nxt in depend.get(node,[]):
-            if nxt not in nodes:
-                walk(nxt, nodes+[nxt],start)
-    for asset in dataset["assets"]:
-        if asset["kind"] == "business_flow":
-            walk(asset["id"],[asset["id"]],asset["id"])
-    return found, paths

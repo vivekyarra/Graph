@@ -7,7 +7,7 @@ import copy
 import json
 from pathlib import Path
 import pytest
-from maelin.logic import traversal_fallback
+from offline_graph import traversal_fixture
 from maelin.simulator import run_simulation
 
 SCENE=json.loads((Path(__file__).parents[1]/'data'/'demo.json').read_text())
@@ -26,7 +26,7 @@ class InMemoryGraphClone:
         return clone
     def ro_query(self, query, params=None):
         self.calls.append(('ro',query,params))
-        threat,biz=traversal_fallback(self.data)
+        threat,biz=traversal_fixture(self.data)
         if 'CAN_PIVOT' in query:
             return Result([[p['nodes'],p['edges']] for p in threat])
         assert 'DEPENDS_ON' in query
