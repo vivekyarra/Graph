@@ -26,7 +26,8 @@
     panY: 0
   };
 
-  const svg = document.querySelector('#topo');
+  const getSvg = () => document.getElementById('topo') || document.querySelector('#topo');
+  let svg = getSvg();
 
   // Force-directed layout solver for 2D base positions (only for unpositioned nodes)
   function solveLayout(g) {
@@ -128,6 +129,7 @@
 
   // Extreme Savage 3D Graph Renderer
   drawGraph = function() {
+    if (!svg) svg = getSvg();
     if (!graph || !svg) return;
     if (graph !== installedGraph) {
       solveLayout(graph);
@@ -350,116 +352,121 @@
     svg.innerHTML = svgContent;
   };
 
-  // Prevent context menu on SVG so right-click can pan freely
-  svg.addEventListener('contextmenu', e => e.preventDefault());
+  function setupSvgInteractions() {
+    if (!svg) svg = getSvg();
+    if (!svg || svg._cockpitInteractionsBound) return;
+    svg._cockpitInteractionsBound = true;
 
-  // Pointer Interaction: Drag node OR Orbit / Pan 3D Camera
-  svg.addEventListener('pointerdown', event => {
-    stopAutoOrbit();
-    const el = event.target.closest('g[data-node]');
+    // Prevent context menu on SVG so right-click can pan freely
+    svg.addEventListener('contextmenu', e => e.preventDefault());
 
-    // Right-click, middle-click, or Shift + left-click initiates PAN
-    if (event.button === 2 || event.button === 1 || event.shiftKey) {
-      isPanning = true;
-      panStart = { x: event.clientX, y: event.clientY, panX: camera.panX, panY: camera.panY };
-      svg.classList.add('grabbing');
-      svg.setPointerCapture(event.pointerId);
-      return;
-    }
+    // Pointer Interaction: Drag node OR Orbit / Pan 3D Camera
+    svg.addEventListener('pointerdown', event => {
+      stopAutoOrbit();
+      const el = event.target.closest('g[data-node]');
 
-    if (el && graph) {
-      // Node dragging
-      dragging = { id: el.dataset.node, clientX: event.clientX, clientY: event.clientY };
-      wasDrag = false;
-      activeGrabEl = el;
-      el.classList.add('grabbing');
-      svg.setPointerCapture(event.pointerId);
-    } else {
-      // Background 3D Camera Orbit
-      isOrbiting = true;
-      orbitStart = { x: event.clientX, y: event.clientY, yaw: camera.yaw, pitch: camera.pitch };
-      svg.classList.add('grabbing');
-      svg.setPointerCapture(event.pointerId);
-    }
-  });
+      // Right-click, middle-click, or Shift + left-click initiates PAN
+      if (event.button === 2 || event.button === 1 || event.shiftKey) {
+        isPanning = true;
+        panStart = { x: event.clientX, y: event.clientY, panX: camera.panX, panY: camera.panY };
+        svg.classList.add('grabbing');
+        svg.setPointerCapture(event.pointerId);
+        return;
+      }
 
-  svg.addEventListener('pointermove', event => {
-    if (isPanning) {
-      const dx = event.clientX - panStart.x;
-      const dy = event.clientY - panStart.y;
-      camera.panX = panStart.panX + dx;
-      camera.panY = panStart.panY + dy;
-      drawGraph();
-      return;
-    }
+      if (el && graph) {
+        // Node dragging
+        dragging = { id: el.dataset.node, clientX: event.clientX, clientY: event.clientY };
+        wasDrag = false;
+        activeGrabEl = el;
+        el.classList.add('grabbing');
+        svg.setPointerCapture(event.pointerId);
+      } else {
+        // Background 3D Camera Orbit
+        isOrbiting = true;
+        orbitStart = { x: event.clientX, y: event.clientY, yaw: camera.yaw, pitch: camera.pitch };
+        svg.classList.add('grabbing');
+        svg.setPointerCapture(event.pointerId);
+      }
+    });
 
-    if (dragging && graph) {
-      const dsx = event.clientX - dragging.clientX;
-      const dsy = event.clientY - dragging.clientY;
-      if (Math.hypot(dsx, dsy) > 4) wasDrag = true;
-      if (!wasDrag) return;
+    svg.addEventListener('pointermove', event => {
+      if (isPanning) {
+        const dx = event.clientX - panStart.x;
+        const dy = event.clientY - panStart.y;
+        camera.panX = panStart.panX + dx;
+        camera.panY = panStart.panY + dy;
+        drawGraph();
+        return;
+      }
 
-      const node = graph.nodes.find(n => n.id === dragging.id);
-      if (node) {
-        // True 3D Inverse Camera Projection Transformation
-        const radY = (camera.yaw * Math.PI) / 180;
-        const radP = (camera.pitch * Math.PI) / 180;
-        const cosY = Math.cos(radY), sinY = Math.sin(radY);
-        const cosP = Math.cos(radP), sinP = Math.sin(radP);
-        const safeCosY = Math.abs(cosY) > 0.15 ? cosY : (cosY >= 0 ? 0.15 : -0.15);
-        const safeCosP = Math.abs(cosP) > 0.15 ? cosP : 0.15;
+      if (dragging && graph) {
+        const dsx = event.clientX - dragging.clientX;
+        const dsy = event.clientY - dragging.clientY;
+        if (Math.hypot(dsx, dsy) > 4) wasDrag = true;
+        if (!wasDrag) return;
 
-        const info = nodeProj ? null : null; // scale from camera
-        const scale = camera.zoom;
-        const dx_world = dsx / (scale * safeCosY);
-        const dy_world = (dsy - scale * sinY * sinP * dx_world) / (scale * safeCosP);
+        const node = graph.nodes.find(n => n.id === dragging.id);
+        if (node) {
+          // True 3D Inverse Camera Projection Transformation
+          const radY = (camera.yaw * Math.PI) / 180;
+          const radP = (camera.pitch * Math.PI) / 180;
+          const cosY = Math.cos(radY), sinY = Math.sin(radY);
+          const cosP = Math.cos(radP), sinP = Math.sin(radP);
+          const safeCosY = Math.abs(cosY) > 0.15 ? cosY : (cosY >= 0 ? 0.15 : -0.15);
+          const safeCosP = Math.abs(cosP) > 0.15 ? cosP : 0.15;
 
-        node.x = Math.max(65, Math.min(755, node.x + dx_world));
-        node.y = Math.max(45, Math.min(465, node.y + dy_world));
+          const scale = camera.zoom;
+          const dx_world = dsx / (scale * safeCosY);
+          const dy_world = (dsy - scale * sinY * sinP * dx_world) / (scale * safeCosP);
 
-        dragging.clientX = event.clientX;
-        dragging.clientY = event.clientY;
+          node.x = Math.max(65, Math.min(755, node.x + dx_world));
+          node.y = Math.max(45, Math.min(465, node.y + dy_world));
+
+          dragging.clientX = event.clientX;
+          dragging.clientY = event.clientY;
+          drawGraph();
+        }
+      } else if (isOrbiting) {
+        const dx = event.clientX - orbitStart.x;
+        const dy = event.clientY - orbitStart.y;
+        if (Math.hypot(dx, dy) > 4) wasDrag = true;
+
+        camera.yaw = (orbitStart.yaw + dx * 0.35) % 360;
+        camera.pitch = Math.max(0, Math.min(75, orbitStart.pitch - dy * 0.35));
         drawGraph();
       }
-    } else if (isOrbiting) {
-      const dx = event.clientX - orbitStart.x;
-      const dy = event.clientY - orbitStart.y;
-      if (Math.hypot(dx, dy) > 4) wasDrag = true;
+    });
 
-      camera.yaw = (orbitStart.yaw + dx * 0.35) % 360;
-      camera.pitch = Math.max(0, Math.min(75, orbitStart.pitch - dy * 0.35));
+    const cleanupPointers = () => {
+      dragging = null;
+      isOrbiting = false;
+      isPanning = false;
+      if (activeGrabEl) {
+        activeGrabEl.classList.remove('grabbing');
+        activeGrabEl = null;
+      }
+      svg.classList.remove('grabbing');
+    };
+
+    svg.addEventListener('pointerup', cleanupPointers);
+    svg.addEventListener('pointercancel', cleanupPointers);
+
+    // Mouse wheel zooms 3D camera
+    svg.addEventListener('wheel', event => {
+      event.preventDefault();
+      stopAutoOrbit();
+      camera.zoom = Math.max(0.55, Math.min(2.4, camera.zoom - event.deltaY * 0.0012));
       drawGraph();
-    }
-  });
+    }, { passive: false });
 
-  const cleanupPointers = () => {
-    dragging = null;
-    isOrbiting = false;
-    isPanning = false;
-    if (activeGrabEl) {
-      activeGrabEl.classList.remove('grabbing');
-      activeGrabEl = null;
-    }
-    svg.classList.remove('grabbing');
-  };
-
-  svg.addEventListener('pointerup', cleanupPointers);
-  svg.addEventListener('pointercancel', cleanupPointers);
-
-  // Mouse wheel zooms 3D camera
-  svg.addEventListener('wheel', event => {
-    event.preventDefault();
-    stopAutoOrbit();
-    camera.zoom = Math.max(0.55, Math.min(2.4, camera.zoom - event.deltaY * 0.0012));
-    drawGraph();
-  }, { passive: false });
-
-  // Suppress click on node if it was a drag operation
-  svg.addEventListener('click', event => {
-    if (!wasDrag) return;
-    event.stopImmediatePropagation();
-    wasDrag = false;
-  }, true);
+    // Suppress click on node if it was a drag operation
+    svg.addEventListener('click', event => {
+      if (!wasDrag) return;
+      event.stopImmediatePropagation();
+      wasDrag = false;
+    }, true);
+  }
 
   // Setup 3D Camera HUD controls
   function setupHudControls() {
@@ -623,10 +630,23 @@
     return r?.conclusion ? base + ' Model reasoning: ' + r.conclusion : base;
   };
 
-  // Initialize HUD controls
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setupHudControls);
-  } else {
+  // Export 3D renderer
+  window.renderCockpit3D = drawGraph;
+  window.drawGraph = drawGraph;
+
+  // Initialize cockpit stage, HUD controls, and graph rendering
+  function initCockpit() {
+    setupSvgInteractions();
     setupHudControls();
+    if (typeof graph !== 'undefined' && graph) {
+      drawGraph();
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCockpit);
+  } else {
+    initCockpit();
   }
 })();
+

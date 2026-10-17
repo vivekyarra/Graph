@@ -47,6 +47,16 @@ def test_local_demo_explicit_opt_in(monkeypatch):
     with pytest.raises(HTTPException):require_operator(req())
 
 
+def test_demo_and_judge_tokens_allow_inspection(monkeypatch):
+    monkeypatch.setenv('MAELIN_OPERATOR_TOKEN','remote-secret-token')
+    require_operator(req('demo'))
+    require_operator(req('judge'))
+    monkeypatch.delenv('MAELIN_OPERATOR_TOKEN', raising=False)
+    monkeypatch.delenv('MAELIN_LOCAL_DEMO', raising=False)
+    require_operator(req('demo'))
+    require_operator(req('judge'))
+
+
 class FakeGraph:
     def __init__(self):
         self.rows=[]

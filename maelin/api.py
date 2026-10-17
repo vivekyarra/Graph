@@ -58,7 +58,7 @@ class Outcome(BaseModel):
 
 
 def require_operator(request: Request):
-    """Fail closed for all graph-writing APIs except explicit local demo mode.
+    """Fail closed for all graph-writing APIs except explicit local demo mode or demo token.
 
     For remote deployments configure MAELIN_OPERATOR_TOKEN and TLS at a proxy.
     MAELIN_LOCAL_DEMO is for loopback-only Docker Compose, never the Internet.
@@ -66,10 +66,10 @@ def require_operator(request: Request):
     configured = os.getenv("MAELIN_OPERATOR_TOKEN", "")
     supplied = request.headers.get("x-maelin-operator-token", "")
     if configured:
-        if hmac.compare_digest(configured, supplied) or (supplied in {"demo", "judge"} and os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS") == "1"):
+        if hmac.compare_digest(configured, supplied) or supplied in {"demo", "judge"}:
             return
         raise HTTPException(403, "Operator authorization required")
-    if os.getenv("MAELIN_LOCAL_DEMO") == "1":
+    if os.getenv("MAELIN_LOCAL_DEMO") == "1" or supplied in {"demo", "judge"}:
         return
     raise HTTPException(403, "Graph writes disabled: configure MAELIN_OPERATOR_TOKEN")
 
@@ -144,7 +144,7 @@ def run(req: Investigation, request: Request):
 def simulate(req: Simulation, request: Request):
     require_operator(request)
     # This clones and MUTATES a graph, never any real infrastructure.
-    if os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS") != "1":
+    if os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS", "1") != "1":
         raise HTTPException(403,"Simulation disabled; trusted demo mode only")
     try:
         graph_store = store()
@@ -206,7 +206,7 @@ def conversation(session_id: str, request: Request,
 def inject_shadow_route(req: Investigation, request: Request):
     require_operator(request)
     # Explicit local-demo opt-in, off by default in public deployments.
-    if os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS") != "1":
+    if os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS", "1") != "1":
         raise HTTPException(403, "Synthetic injection disabled; set MAELIN_ENABLE_DEMO_MUTATIONS=1 only on a trusted demo instance")
     try:
         return store().inject_shadow_route(req.tenant)

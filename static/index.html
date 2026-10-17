@@ -357,34 +357,11 @@ $('topo').addEventListener('click', e => {
   }
 });
 
-// Baseline drawGraph fallback (overridden by 3D engine in cockpit.js)
+// 3D Topology Graph Engine (delegated to cockpit.js)
 function drawGraph() {
-  if (!graph) return;
-  let threat = current?.paths || [];
-  const threatEdges = new Set(threat.flatMap(p => p.edges)), chosen = current?.analysis?.plans?.[selection] || null;
-  let blockedIds = new Set(chosen?.blocked_edges || []); let blockedNodes = new Set(chosen?.blocked_nodes || []);
-  let activeVuln = document.getElementById('vulnerable')?.value || 'auth-service';
-  let svg = '<defs><marker id="arrowR" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6" fill="none" stroke="#f46b7a" stroke-width="1"/></marker><marker id="arrowB" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6" fill="none" stroke="#6c91b5" stroke-width="1"/></marker></defs>';
-  for (const e of graph.edges) {
-    let a = graph.nodes.find(x => x.id === e.from), b = graph.nodes.find(x => x.id === e.to);
-    if (!a || !b) continue;
-    let isPivot = e.kind === 'CAN_PIVOT';
-    let cut = blockedIds.has(e.id) || blockedNodes.has(e.from) || blockedNodes.has(e.to);
-    let stroke = cut ? '#5ce1b3' : isPivot ? (threatEdges.has(e.id) ? '#f46b7a' : '#64758c') : '#668bad';
-    let dash = isPivot ? '' : '6 5';
-    let x1 = a.x, y1 = a.y, x2 = b.x, y2 = b.y;
-    let dx = x2 - x1, dy = y2 - y1, l = Math.sqrt(dx * dx + dy * dy) || 1;
-    let ux = dx / l, uy = dy / l;
-    svg += `<path d="M ${x1 + ux * 35} ${y1 + uy * 22} L ${x2 - ux * 38} ${y2 - uy * 24}" fill="none" stroke="${stroke}" stroke-width="${cut ? 4 : isPivot ? 2.7 : 1.55}" stroke-opacity="${isPivot ? 0.8 : 0.7}" stroke-dasharray="${dash}" marker-end="url(#${isPivot ? 'arrowR' : 'arrowB'})"/>`;
+  if (typeof window.renderCockpit3D === 'function') {
+    window.renderCockpit3D();
   }
-  for (const n of graph.nodes) {
-    let kind = n.kind;
-    let color = n.id === activeVuln ? '#f46b7a' : kind === 'business_flow' ? '#6e95bd' : kind === 'database' ? '#ffd084' : kind === 'identity' ? '#ed9db9' : '#6ad5bf';
-    let label = n.id.replaceAll('-', ' ');
-    if (blockedNodes.has(n.id)) color = '#5ce1b3';
-    svg += `<g data-node="${esc(n.id)}" style="cursor:pointer"><rect x="${n.x - 62}" y="${n.y - 22}" width="124" height="44" rx="11" fill="#101d2d" stroke="${color}" stroke-width="${n.id === activeVuln ? 2.5 : 1.5}"/><text x="${n.x}" y="${n.y + 4}" class="${kind === 'business_flow' ? 'flow-label' : 'map-label'}" text-anchor="middle">${esc(label)}</text>${n.value ? `<text x="${n.x}" y="${n.y + 37}" text-anchor="middle" fill="#8da3b8" font-size="10">${n.value} impact units</text>` : ''}</g>`;
-  }
-  $('topo').innerHTML = svg;
 }
 
 function viewPlan(i) {
@@ -540,8 +517,11 @@ $('record').addEventListener('click', async () => {
   }
 });
 
-refresh();
 </script>
 <script src="/assets/cockpit.js"></script>
+<script>
+// Initial load after 3D cockpit engine and HUD controls are ready
+refresh();
+</script>
 </body>
 </html>
