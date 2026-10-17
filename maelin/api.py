@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from .store import Store
 from .seed import dataset
 from .incident import select_scene
+from .schema import validate_dataset
 from .agents import investigate
 from .simulator import run_simulation
 
@@ -30,6 +31,11 @@ class Investigation(BaseModel):
     vulnerable: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
     target: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
     alert: str | None = Field(default=None, max_length=400)
+
+
+class ScenarioUpload(BaseModel):
+    tenant: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,31}$")
+    dataset: dict
 
 
 class Simulation(BaseModel):
@@ -87,6 +93,21 @@ def graph(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_
         return store().topology(tenant)
     except Exception as e:
         raise HTTPException(503,"Could not query FalkorDB topology") from e
+
+
+@api.post("/api/scenarios", status_code=201)
+def upload_scenario(req: ScenarioUpload, request: Request):
+    require_operator(request)
+    try:
+        data = validate_dataset(req.dataset)
+        # Never overwrite an existing tenant. All topology remains in FalkorDB.
+        store().seed(req.tenant, data, reset=False)
+        return {"tenant":req.tenant, "nodes":len(data["assets"]),
+                "pivot_edges":len(data["pivot_edges"]), "status":"seeded_in_falkordb"}
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, f"Scenario upload failed: {type(exc).__name__}") from exc
 
 
 @api.post("/api/investigate")
