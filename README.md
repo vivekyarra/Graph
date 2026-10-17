@@ -65,6 +65,17 @@ docker compose exec app python -m maelin.seed --tenant beta
 
 ---
 
+## Ephemeral Demo Container vs. Persistent FalkorDB Hosting
+
+> **Important Deployment Architecture Note**:
+> - **The Public Demo (`Dockerfile.demo`)**: Packages a real FalkorDB server inside Render's ephemeral container alongside FastAPI. This offers instant zero-setup judge evaluation without managing cloud databases, but Render container storage is ephemeral. Each code redeployment or container idle restart resets learned incident history back to the seed baseline.
+> - **Continuous Delivery vs. Durable State**: GitHub Actions and Render auto-deploy manage automated code delivery on every push to `main`. However, durable graph memory (persisting `Episode -> ActionExperience` memory graphs and custom tenant uploads across deployments) requires persistent FalkorDB hosting.
+> - **Production Deployment (`Dockerfile`)**: Deploy the decoupled `Dockerfile` (or `render.yaml`) connected to an external persistent FalkorDB instance ([FalkorDB Cloud](https://app.falkordb.cloud) or self-hosted FalkorDB with persistent volume storage). Configure `FALKOR_HOST`, `FALKOR_PORT`, `FALKOR_PASSWORD`, and `FALKOR_SSL=1` in your hosting environment variables.
+>
+> See [DEPLOYMENT_AUTOMATION.md](DEPLOYMENT_AUTOMATION.md) for the complete step-by-step persistent FalkorDB configuration guide.
+
+---
+
 ## Core Cypher Queries
 
 ### 1. Bounded Multi-Hop Attack Traversal (`maelin/store.py`)
