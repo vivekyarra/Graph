@@ -2,6 +2,8 @@
    Tokens: Sub-chromatic engineered glass, deep graphite, soft radial gradients,
    1px hairline rims, 70% horizon line, 7px/14px radius, 1.00s signature ease. */
 
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
 :root {
   color-scheme: dark;
   --void: #07080a;
@@ -32,7 +34,7 @@
   --radius-lg: 14px;
   --radius-pill: 999px;
   --ease-signature: cubic-bezier(0.15, 0.83, 0.66, 1);
-  --duration-signature: 400ms;
+  --duration-signature: 1000ms;
 }
 
 * {
@@ -160,9 +162,10 @@ body {
 }
 
 .brand b {
-  font-size: 19px;
+  font-family: 'Space Grotesk', Inter, system-ui, sans-serif;
+  font-size: 21px;
   font-weight: 750;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   color: var(--foreground);
   display: block;
 }
@@ -376,6 +379,7 @@ select:focus, input:focus {
 }
 
 .intro h1 {
+  font-family: 'Space Grotesk', Inter, system-ui, sans-serif;
   font-size: clamp(28px, 3.4vw, 42px);
   line-height: 1.15;
   margin: 4px 0 10px;
@@ -399,7 +403,7 @@ select:focus, input:focus {
   line-height: 1.6;
 }
 
-/* Specimen Metrics Strip (Image 2 design reference) */
+/* Specimen Metrics & Telemetry Strip (Lumen Edge reference) */
 .specimen-strip {
   display: flex;
   align-items: center;
@@ -425,6 +429,73 @@ select:focus, input:focus {
   color: var(--foreground);
   font-size: 13px;
   font-weight: 700;
+}
+
+/* Lumen Edge Signal Card (Matching Reference Image 2) */
+.signal-preview-card {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  background:
+    radial-gradient(ellipse 90% 60% at 50% 100%, rgba(255, 255, 255, 0.03) 0%, transparent 70%),
+    linear-gradient(135deg, rgba(16, 20, 27, 0.95) 0%, rgba(10, 13, 18, 0.98) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 12px 36px rgba(0, 0, 0, 0.6);
+  margin-bottom: 20px;
+}
+
+.signal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+
+.signal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.signal-box {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+.signal-box .lbl {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+
+.signal-box .val {
+  font-family: 'Space Grotesk', Inter, system-ui, sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--foreground);
+  margin: 4px 0 2px;
+}
+
+.signal-box .sub {
+  font-size: 11px;
+  color: var(--teal);
+}
+
+.sparkline-svg {
+  width: 100%;
+  height: 38px;
+  margin-top: 8px;
+  display: block;
 }
 
 .hero-cta {
@@ -523,8 +594,9 @@ select:focus, input:focus {
 }
 
 .hd h2 {
-  font-size: 13px;
-  letter-spacing: 0.1em;
+  font-family: 'Space Grotesk', Inter, system-ui, sans-serif;
+  font-size: 13.5px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
   font-weight: 750;
@@ -582,7 +654,7 @@ select:focus, input:focus {
 }
 
 .hud-btn {
-  background: rgba(14, 18, 25, 0.85);
+  background: rgba(14, 18, 25, 0.88);
   backdrop-filter: blur(10px);
   border: 1px solid var(--hairline);
   color: #b0c2d4;
@@ -596,6 +668,11 @@ select:focus, input:focus {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
+.hud-btn-sm {
+  padding: 4px 7px;
+  font-weight: 700;
+}
+
 .hud-btn:hover {
   background: rgba(25, 32, 44, 0.95);
   border-color: var(--hairline-bright);
@@ -605,13 +682,13 @@ select:focus, input:focus {
 
 .hud-btn.active {
   border-color: var(--lumen);
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.14);
   color: var(--lumen);
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
 }
 
 .hud-telemetry {
-  background: rgba(10, 13, 18, 0.82);
+  background: rgba(10, 13, 18, 0.85);
   backdrop-filter: blur(8px);
   border: 1px solid var(--hairline);
   padding: 4px 10px;
@@ -631,12 +708,16 @@ select:focus, input:focus {
 }
 
 #topo g[data-node]:hover {
-  filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.45));
+  filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.5));
+}
+
+#topo g.node-vuln rect:nth-of-type(2) {
+  filter: drop-shadow(0 0 14px rgba(244, 107, 122, 0.8));
 }
 
 #topo path.edge-cut {
   stroke: var(--teal) !important;
-  stroke-width: 4 !important;
+  stroke-width: 4.2 !important;
   stroke-dasharray: 8 5;
   animation: cutflow 1.5s linear infinite;
   filter: drop-shadow(0 0 8px rgba(92, 225, 179, 0.8));
@@ -644,8 +725,23 @@ select:focus, input:focus {
 
 #topo path.edge-threat {
   stroke: var(--red) !important;
-  stroke-width: 3 !important;
-  filter: drop-shadow(0 0 6px rgba(244, 107, 122, 0.8));
+  stroke-width: 3.2 !important;
+  filter: drop-shadow(0 0 6px rgba(244, 107, 122, 0.85));
+}
+
+/* Extreme Savage Laser Pulse along active threat paths */
+#topo path.edge-threat-pulse {
+  animation: laserpulse 1.8s linear infinite;
+  filter: drop-shadow(0 0 5px #ffffff);
+}
+
+@keyframes laserpulse {
+  from {
+    stroke-dashoffset: 126;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 @keyframes cutflow {
@@ -683,6 +779,7 @@ select:focus, input:focus {
 
 .stat strong {
   display: block;
+  font-family: 'Space Grotesk', Inter, system-ui, sans-serif;
   font-size: 26px;
   font-weight: 800;
   line-height: 1.1;
@@ -726,6 +823,7 @@ select:focus, input:focus {
 }
 
 .future strong {
+  font-family: 'Space Grotesk', Inter, system-ui, sans-serif;
   font-size: 26px;
   font-weight: 800;
   display: block;
@@ -790,6 +888,7 @@ select:focus, input:focus {
 }
 
 .cost {
+  font-family: 'Space Grotesk', Inter, system-ui, sans-serif;
   font-size: 22px;
   font-weight: 800;
   color: var(--teal);

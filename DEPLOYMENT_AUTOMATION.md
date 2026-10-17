@@ -26,6 +26,37 @@ The automatic deployment pipeline (GitHub Actions CI + Render Auto-Deploy on `ma
 
 However, **automatic code deployment does not solve data persistence**. To ensure that Maelin's learned graph memory, incident handoffs, and operator feedback endure across code updates, FalkorDB must be decoupled from the application container and hosted on persistent infrastructure.
 
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. Ephemeral Hackathon Container (Render Web Service · Current Demo)                  │
+│                                                                                        │
+│   git push main ──► GitHub Actions ──► Render Webhook Auto-Deploy                      │
+│                                              │                                         │
+│                                              ▼ (Container Recycled)                    │
+│                                 ┌─────────────────────────┐                            │
+│                                 │ [FastAPI App Container] │                            │
+│                                 │   FalkorDB (Local /tmp) │ ◄── Reset on Redeploy!     │
+│                                 └─────────────────────────┘                            │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 2. Decoupled Production Architecture (Persistent Graph Memory · Recommended)           │
+│                                                                                        │
+│   git push main ──► GitHub Actions ──► Render Webhook Auto-Deploy                      │
+│                                              │                                         │
+│                                              ▼ (Code Updated Seamlessly)               │
+│                                 ┌─────────────────────────┐                            │
+│                                 │ [FastAPI Decoupled App] │ (Dockerfile)               │
+│                                 └────────────┬────────────┘                            │
+│                                              │ TLS Connection (FALKOR_SSL=1)           │
+│                                              ▼                                         │
+│                                 ┌─────────────────────────┐                            │
+│                                 │  Persistent FalkorDB    │                            │
+│                                 │  (Cloud or SSD Volume)  │ ◄── Graph Memory Preserved!│
+│                                 └─────────────────────────┘                            │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## 2. Setting Up Persistent FalkorDB Hosting

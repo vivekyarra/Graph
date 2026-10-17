@@ -92,6 +92,48 @@
       <div class="metric-item">IN-MEMORY FALLBACK: <strong>NONE (FAILS CLOSED)</strong></div>
     </div>
 
+    <!-- Lumen Edge Signal Telemetry Specimen Card (Image 2 Design Language) -->
+    <div class="signal-preview-card">
+      <div class="signal-header">
+        <span>⚡ SIGNAL — REGION NA // LUMEN EDGE LIVE</span>
+        <div style="display:flex;gap:6px">
+          <span class="badge-mini" style="background:rgba(255,255,255,0.08);padding:2px 8px;border-radius:4px">24h</span>
+          <span class="badge-mini" style="background:rgba(255,255,255,0.03);padding:2px 8px;border-radius:4px;color:var(--muted)">7d</span>
+          <span class="badge-mini" style="background:rgba(255,255,255,0.03);padding:2px 8px;border-radius:4px;color:var(--muted)">30d</span>
+        </div>
+      </div>
+      <div class="signal-grid">
+        <div class="signal-box">
+          <div class="lbl">ACTIVE SESSIONS</div>
+          <div class="val">12 408</div>
+          <div class="sub">↗ +4.6% vs. baseline</div>
+          <svg class="sparkline-svg" viewBox="0 0 200 40" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="rgba(92,225,179,0.35)"/>
+                <stop offset="100%" stop-color="rgba(92,225,179,0)"/>
+              </linearGradient>
+            </defs>
+            <path d="M 0 32 Q 30 28, 60 20 T 120 18 T 160 12 T 200 8 L 200 40 L 0 40 Z" fill="url(#sparkGrad)"/>
+            <path d="M 0 32 Q 30 28, 60 20 T 120 18 T 160 12 T 200 8" fill="none" stroke="#5ce1b3" stroke-width="1.8"/>
+          </svg>
+        </div>
+        <div class="signal-box">
+          <div class="lbl">LATENCY P95</div>
+          <div class="val">38 <small style="font-size:14px;color:var(--muted)">ms</small></div>
+          <div class="sub" style="color:var(--blue)">⚡ FalkorDB Cypher · Sub-millisecond</div>
+          <svg class="sparkline-svg" viewBox="0 0 200 40" preserveAspectRatio="none">
+            <path d="M 0 24 Q 25 14, 50 26 T 100 16 T 150 22 T 200 14" fill="none" stroke="#7098c2" stroke-width="1.5"/>
+            <path d="M 0 30 Q 35 22, 70 32 T 140 26 T 200 28" fill="none" stroke="#50637a" stroke-width="1" stroke-dasharray="3 3"/>
+          </svg>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;font-family:ui-monospace,monospace;font-size:10px;color:var(--muted)">
+        <span>• ALL HORIZONS NOMINAL</span>
+        <span>BUILD · LE.1.0.42</span>
+      </div>
+    </div>
+
     <!-- Scenario Import Collapsible -->
     <details class="scenario-import" id="scenarioImport">
       <summary>✦ Load a custom synthetic infrastructure graph (JSON)</summary>
@@ -119,8 +161,11 @@
             <div class="hud-group">
               <button type="button" id="hud3dIso" class="hud-btn active" title="3D Isometric perspective">⟐ 3D ISO</button>
               <button type="button" id="hud3dTilt" class="hud-btn" title="Deep dramatic 3D perspective">⟐ 3D TILT</button>
+              <button type="button" id="hud3dBirdeye" class="hud-btn" title="High overhead 3D view">⟐ 3D BIRDEYE</button>
               <button type="button" id="hud2dFlat" class="hud-btn" title="2D Top-down planar view">⟐ 2D FLAT</button>
               <button type="button" id="hudAutoOrbit" class="hud-btn" title="Toggle cinematic 360° auto-orbit">⟐ AUTO-ORBIT</button>
+              <button type="button" id="hudZoomIn" class="hud-btn hud-btn-sm" title="Zoom in">+</button>
+              <button type="button" id="hudZoomOut" class="hud-btn hud-btn-sm" title="Zoom out">−</button>
               <button type="button" id="hudReset" class="hud-btn" title="Reset 3D camera to default">↺ RESET</button>
             </div>
             <div class="hud-group">
@@ -300,10 +345,15 @@ function syncIncidentSelectors() {
 
 $('topo').addEventListener('click', e => {
   const element = e.target.closest('g[data-node]');
-  if (element && [...$('vulnerable').options].some(o => o.value === element.dataset.node)) {
-    $('vulnerable').value = element.dataset.node;
-    $('simulation').textContent = 'Selected ' + element.dataset.node + '. Investigate to query live multi-hop paths.';
-    current = null; selection = 0; drawGraph();
+  if (element) {
+    const nodeId = element.dataset.node;
+    if ([...$('vulnerable').options].some(o => o.value === nodeId)) {
+      $('vulnerable').value = nodeId;
+      $('simulation').textContent = 'Selected ' + nodeId + '. Investigate to query live multi-hop paths.';
+      current = null; selection = 0; drawGraph();
+    } else {
+      $('simulation').textContent = 'Selected ' + nodeId + ' (' + (graph?.nodes?.find(n => n.id === nodeId)?.kind || 'node') + '). To investigate attack paths, choose an infrastructure service.';
+    }
   }
 });
 
@@ -313,6 +363,7 @@ function drawGraph() {
   let threat = current?.paths || [];
   const threatEdges = new Set(threat.flatMap(p => p.edges)), chosen = current?.analysis?.plans?.[selection] || null;
   let blockedIds = new Set(chosen?.blocked_edges || []); let blockedNodes = new Set(chosen?.blocked_nodes || []);
+  let activeVuln = document.getElementById('vulnerable')?.value || 'auth-service';
   let svg = '<defs><marker id="arrowR" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6" fill="none" stroke="#f46b7a" stroke-width="1"/></marker><marker id="arrowB" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6" fill="none" stroke="#6c91b5" stroke-width="1"/></marker></defs>';
   for (const e of graph.edges) {
     let a = graph.nodes.find(x => x.id === e.from), b = graph.nodes.find(x => x.id === e.to);
@@ -328,10 +379,10 @@ function drawGraph() {
   }
   for (const n of graph.nodes) {
     let kind = n.kind;
-    let color = kind === 'business_flow' ? '#6e95bd' : kind === 'database' ? '#ffd084' : kind === 'identity' ? '#ed9db9' : n.id === 'auth-service' ? '#f46b7a' : '#6ad5bf';
+    let color = n.id === activeVuln ? '#f46b7a' : kind === 'business_flow' ? '#6e95bd' : kind === 'database' ? '#ffd084' : kind === 'identity' ? '#ed9db9' : '#6ad5bf';
     let label = n.id.replaceAll('-', ' ');
     if (blockedNodes.has(n.id)) color = '#5ce1b3';
-    svg += `<g data-node="${esc(n.id)}" style="cursor:pointer"><rect x="${n.x - 62}" y="${n.y - 22}" width="124" height="44" rx="11" fill="#101d2d" stroke="${color}" stroke-width="1.5"/><text x="${n.x}" y="${n.y + 4}" class="${kind === 'business_flow' ? 'flow-label' : 'map-label'}" text-anchor="middle">${esc(label)}</text>${n.value ? `<text x="${n.x}" y="${n.y + 37}" text-anchor="middle" fill="#8da3b8" font-size="10">${n.value} impact units</text>` : ''}</g>`;
+    svg += `<g data-node="${esc(n.id)}" style="cursor:pointer"><rect x="${n.x - 62}" y="${n.y - 22}" width="124" height="44" rx="11" fill="#101d2d" stroke="${color}" stroke-width="${n.id === activeVuln ? 2.5 : 1.5}"/><text x="${n.x}" y="${n.y + 4}" class="${kind === 'business_flow' ? 'flow-label' : 'map-label'}" text-anchor="middle">${esc(label)}</text>${n.value ? `<text x="${n.x}" y="${n.y + 37}" text-anchor="middle" fill="#8da3b8" font-size="10">${n.value} impact units</text>` : ''}</g>`;
   }
   $('topo').innerHTML = svg;
 }

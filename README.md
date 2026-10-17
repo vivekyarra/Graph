@@ -67,12 +67,71 @@ docker compose exec app python -m maelin.seed --tenant beta
 
 ## Ephemeral Demo Container vs. Persistent FalkorDB Hosting
 
-> **Important Deployment Architecture Note**:
-> - **The Public Demo (`Dockerfile.demo`)**: Packages a real FalkorDB server inside Render's ephemeral container alongside FastAPI. This offers instant zero-setup judge evaluation without managing cloud databases, but Render container storage is ephemeral. Each code redeployment or container idle restart resets learned incident history back to the seed baseline.
-> - **Continuous Delivery vs. Durable State**: GitHub Actions and Render auto-deploy manage automated code delivery on every push to `main`. However, durable graph memory (persisting `Episode -> ActionExperience` memory graphs and custom tenant uploads across deployments) requires persistent FalkorDB hosting.
-> - **Production Deployment (`Dockerfile`)**: Deploy the decoupled `Dockerfile` (or `render.yaml`) connected to an external persistent FalkorDB instance ([FalkorDB Cloud](https://app.falkordb.cloud) or self-hosted FalkorDB with persistent volume storage). Configure `FALKOR_HOST`, `FALKOR_PORT`, `FALKOR_PASSWORD`, and `FALKOR_SSL=1` in your hosting environment variables.
->
-> See [DEPLOYMENT_AUTOMATION.md](DEPLOYMENT_AUTOMATION.md) for the complete step-by-step persistent FalkorDB configuration guide.
+### The Fundamental Limitation
+The public hackathon demo runs on Render using `Dockerfile.demo`, packaging both FalkorDB and the FastAPI backend inside a single ephemeral container. This delivers instant, zero-configuration evaluation for judges.
+
+However, **Render container storage is ephemeral**:
+- Every code redeployment or idle container restart recycles the container filesystem.
+- When the container starts up, `scripts/start-demo.sh` runs `python -m maelin.seed`, resetting the topology back to initial factory conditions.
+- **Consequence**: All accumulated incident memory (Track 02 `Episode -> ActionExperience` nodes), operator-reported unexpected outages, causal score adaptations, and custom tenant graphs are wiped on redeployment.
+
+### Continuous Code Delivery vs. Durable Graph Memory
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. Ephemeral Hackathon Container (Render Web Service · Current Demo)                  │
+│                                                                                        │
+│   git push main ──► GitHub Actions ──► Render Webhook Auto-Deploy                      │
+│                                              │                                         │
+│                                              ▼ (Container Recycled)                    │
+│                                 ┌─────────────────────────┐                            │
+│                                 │ [FastAPI App Container] │                            │
+│                                 │   FalkorDB (Local /tmp) │ ◄── Reset on Redeploy!     │
+│                                 └─────────────────────────┘                            │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 2. Decoupled Production Architecture (Persistent Graph Memory · Recommended)           │
+│                                                                                        │
+│   git push main ──► GitHub Actions ──► Render Webhook Auto-Deploy                      │
+│                                              │                                         │
+│                                              ▼ (Code Updated Seamlessly)               │
+│                                 ┌─────────────────────────┐                            │
+│                                 │ [FastAPI Decoupled App] │ (Dockerfile)               │
+│                                 └────────────┬────────────┘                            │
+│                                              │ TLS Connection (FALKOR_SSL=1)           │
+│                                              ▼                                         │
+│                                 ┌─────────────────────────┐                            │
+│                                 │  Persistent FalkorDB    │                            │
+│                                 │  (Cloud or SSD Volume)  │ ◄── Graph Memory Preserved!│
+│                                 └─────────────────────────┘                            │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The automatic deployment pipeline (GitHub Actions CI + Render auto-deploy) provides seamless **code delivery**, but **durable graph memory requires persistent FalkorDB hosting**.
+
+### Migrating to Persistent Hosting
+
+1. **Provision Persistent FalkorDB**:
+   - **Managed**: [FalkorDB Cloud](https://app.falkordb.cloud) with encrypted SSD persistence and automated snapshots.
+   - **Self-Hosted**: Docker container with persistent named volume:
+     ```bash
+     docker run -d --name falkordb-prod -p 6379:6379 -v falkordb_data:/data falkordb/falkordb:latest --save 60 1 --appendonly yes --requirepass "secret"
+     ```
+2. **Switch Render to Decoupled Dockerfile**:
+   - Set Dockerfile path in Render settings to `./Dockerfile` (or deploy via `render.yaml`).
+3. **Configure Environment Variables in Render**:
+   - `FALKOR_HOST`: Remote hostname or private IP
+   - `FALKOR_PORT`: `6379`
+   - `FALKOR_PASSWORD`: Database auth token
+   - `FALKOR_SSL`: `1` (required for FalkorDB Cloud)
+4. **One-Time Seeding for Remote Persistent Graph**:
+   ```bash
+   FALKOR_HOST="remote-host" FALKOR_PORT="6379" FALKOR_PASSWORD="secret" FALKOR_SSL="1" python -m maelin.seed --tenant alpha
+   FALKOR_HOST="remote-host" FALKOR_PORT="6379" FALKOR_PASSWORD="secret" FALKOR_SSL="1" python -m maelin.seed --tenant beta
+   ```
+
+See [DEPLOYMENT_AUTOMATION.md](DEPLOYMENT_AUTOMATION.md) for the complete step-by-step persistent FalkorDB configuration and operational guide.
 
 ---
 

@@ -1,13 +1,16 @@
 /* Maelin — Lumen Edge Extreme Savage 3D Graph UI & Topology Cockpit
    True 3D projective geometry, interactive orbit camera, depth layering,
-   volumetric laser conduits, and engineered glass node pods. */
+   volumetric laser conduits, animated threat pulses, and engineered glass node pods. */
 
 (() => {
   let installedGraph = null;
   let dragging = null;
   let isOrbiting = false;
+  let isPanning = false;
+  let panStart = { x: 0, y: 0, panX: 0, panY: 0 };
   let orbitStart = { x: 0, y: 0, yaw: 0, pitch: 0 };
   let wasDrag = false;
+  let activeGrabEl = null;
   let knownDefaults = null;
   let autoOrbit = false;
   let orbitAnimId = null;
@@ -25,15 +28,19 @@
 
   const svg = document.querySelector('#topo');
 
-  // Force-directed layout solver for 2D base positions
+  // Force-directed layout solver for 2D base positions (only for unpositioned nodes)
   function solveLayout(g) {
     if (!g?.nodes?.length) return;
     const nodes = g.nodes, edges = g.edges, byId = new Map(nodes.map(n => [n.id, n]));
+    // Check if graph already has valid layout coordinates
+    const hasCoords = nodes.every(n => typeof n.x === 'number' && typeof n.y === 'number' && n.x > 0 && n.y > 0);
+    if (hasCoords) return;
+
     for (let step = 0; step < 110; step++) {
-      const force = new Map(nodes.map(n => [n.id, { x: (410 - n.x) * 0.006, y: (255 - n.y) * 0.006 }]));
+      const force = new Map(nodes.map(n => [n.id, { x: (410 - (n.x || 410)) * 0.006, y: (255 - (n.y || 255)) * 0.006 }]));
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i], b = nodes[j], dx = a.x - b.x, dy = a.y - b.y;
+          const a = nodes[i], b = nodes[j], dx = (a.x || 410) - (b.x || 410), dy = (a.y || 255) - (b.y || 255);
           const dist = Math.max(22, Math.hypot(dx, dy)), strength = 1450 / (dist * dist);
           force.get(a.id).x += dx / dist * strength;
           force.get(a.id).y += dy / dist * strength;
@@ -44,15 +51,15 @@
       for (const edge of edges) {
         const a = byId.get(edge.from), b = byId.get(edge.to);
         if (!a || !b) continue;
-        const dx = b.x - a.x, dy = b.y - a.y, dist = Math.max(10, Math.hypot(dx, dy));
+        const dx = (b.x || 410) - (a.x || 410), dy = (b.y || 255) - (a.y || 255), dist = Math.max(10, Math.hypot(dx, dy));
         const v = (dist - (edge.kind === 'DEPENDS_ON' ? 145 : 165)) * 0.002;
         force.get(a.id).x += dx / dist * v; force.get(a.id).y += dy / dist * v;
         force.get(b.id).x -= dx / dist * v; force.get(b.id).y -= dy / dist * v;
       }
       for (const n of nodes) {
         const v = force.get(n.id);
-        n.x = Math.min(745, Math.max(75, n.x + v.x * 2));
-        n.y = Math.min(460, Math.max(50, n.y + v.y * 2));
+        n.x = Math.min(745, Math.max(75, (n.x || 410) + v.x * 2));
+        n.y = Math.min(460, Math.max(50, (n.y || 255) + v.y * 2));
       }
     }
   }
@@ -83,18 +90,40 @@
   // Determine semantic 3D elevation layer for each node
   function getNodeElevation(n) {
     let baseZ = 0;
-    if (n.kind === 'business_flow') baseZ = 42;
+    if (n.kind === 'business_flow') baseZ = 46;
     else if (n.kind === 'database') baseZ = -55;
-    else if (n.id === 'internet') baseZ = 68;
-    else if (n.id === 'auth-service' || n.kind === 'identity') baseZ = 20;
-    else baseZ = -5;
+    else if (n.id === 'internet') baseZ = 70;
+    else if (n.kind === 'identity') baseZ = 24;
+    else baseZ = -2;
 
-    // Active/vulnerable node gets elevation boost
-    const vulnVal = document.getElementById('vulnerable')?.value;
-    if (vulnVal && n.id === vulnVal) {
-      baseZ += 28;
+    // Active/vulnerable node gets dynamic focus lift
+    const activeVuln = document.getElementById('vulnerable')?.value || knownDefaults?.vulnerable || 'auth-service';
+    if (n.id === activeVuln) {
+      baseZ += 32;
     }
     return baseZ;
+  }
+
+  // Stop auto-orbit cleanly
+  function stopAutoOrbit() {
+    if (autoOrbit) {
+      autoOrbit = false;
+      const btn = document.getElementById('hudAutoOrbit');
+      if (btn) btn.classList.remove('active');
+      if (orbitAnimId) {
+        cancelAnimationFrame(orbitAnimId);
+        orbitAnimId = null;
+      }
+    }
+  }
+
+  // Node category glyph helper
+  function getNodeGlyph(kind, id) {
+    if (id === 'internet') return '⟐';
+    if (kind === 'business_flow') return '⚡';
+    if (kind === 'database') return '⛁';
+    if (kind === 'identity') return '⚿';
+    return '⬡';
   }
 
   // Extreme Savage 3D Graph Renderer
@@ -110,12 +139,12 @@
     const chosen = current?.analysis?.plans?.[selection] || null;
     const blockedIds = new Set(chosen?.blocked_edges || []);
     const blockedNodes = new Set(chosen?.blocked_nodes || []);
-    const vulnVal = document.getElementById('vulnerable')?.value;
+    const activeVuln = document.getElementById('vulnerable')?.value || knownDefaults?.vulnerable || 'auth-service';
 
     // Update HUD telemetry
     const tel = document.getElementById('hudTelemetry');
     if (tel) {
-      tel.textContent = `CAM: PITCH ${Math.round(camera.pitch)}° | YAW ${Math.round(camera.yaw)}° | ZOOM ${camera.zoom.toFixed(2)}x`;
+      tel.textContent = `CAM: PITCH ${Math.round(camera.pitch)}° | YAW ${Math.round(camera.yaw)}° | ZOOM ${camera.zoom.toFixed(2)}x | PAN ${Math.round(camera.panX)},${Math.round(camera.panY)}`;
     }
 
     // Compute 3D node projections
@@ -127,34 +156,54 @@
     }
 
     let svgContent = `<defs>
-      <marker id="arrowR" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-        <path d="M0 0 L7 4 L0 8" fill="none" stroke="#f46b7a" stroke-width="1.3"/>
+      <marker id="arrowR" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+        <path d="M0 1 L7 4 L0 7 Z" fill="#f46b7a"/>
       </marker>
-      <marker id="arrowB" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-        <path d="M0 0 L7 4 L0 8" fill="none" stroke="#7098c2" stroke-width="1.3"/>
+      <marker id="arrowB" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+        <path d="M0 1 L7 4 L0 7 Z" fill="#7098c2"/>
       </marker>
-      <radialGradient id="nodeGrad" cx="50%" cy="100%" r="80%">
-        <stop offset="0%" stop-color="rgba(255,255,255,0.08)"/>
-        <stop offset="100%" stop-color="rgba(16,21,29,0.96)"/>
+      <marker id="arrowG" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+        <path d="M0 1 L7 4 L0 7 Z" fill="#5ce1b3"/>
+      </marker>
+      <radialGradient id="glassSurface" cx="50%" cy="100%" r="85%">
+        <stop offset="0%" stop-color="rgba(255,255,255,0.09)"/>
+        <stop offset="60%" stop-color="rgba(18,24,34,0.95)"/>
+        <stop offset="100%" stop-color="rgba(9,12,17,0.98)"/>
       </radialGradient>
-      <filter id="lumenGlow" x="-20%" y="-20%" width="140%" height="140%">
-        <feGaussianBlur stdDeviation="3" result="blur"/>
+      <radialGradient id="glassSurfaceHot" cx="50%" cy="100%" r="90%">
+        <stop offset="0%" stop-color="rgba(244,107,122,0.22)"/>
+        <stop offset="60%" stop-color="rgba(28,14,20,0.95)"/>
+        <stop offset="100%" stop-color="rgba(12,8,12,0.98)"/>
+      </radialGradient>
+      <filter id="lumenGlow" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="4" result="blur"/>
+        <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+      </filter>
+      <filter id="laserGlow" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="5" result="blur"/>
         <feComposite in="SourceGraphic" in2="blur" operator="over"/>
       </filter>
     </defs>`;
 
-    // Layer 1: 3D Holographic Ground Grid (Floor plane at z = -90)
+    // Layer 1: 3D Holographic Perspective Floor Grid (Floor plane at z = -90)
     const zFloor = -90;
-    let gridSvg = '<g class="ground-grid" opacity="0.35">';
-    for (let gx = -360; gx <= 360; gx += 120) {
-      const p1 = project(gx, -240, zFloor);
-      const p2 = project(gx, 240, zFloor);
-      gridSvg += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="rgba(112,152,194,0.3)" stroke-width="0.8"/>`;
+    let gridSvg = '<g class="ground-grid" opacity="0.45">';
+    for (let gx = -420; gx <= 420; gx += 105) {
+      const p1 = project(gx, -270, zFloor);
+      const p2 = project(gx, 270, zFloor);
+      gridSvg += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="rgba(112,152,194,0.25)" stroke-width="0.8"/>`;
     }
-    for (let gy = -240; gy <= 240; gy += 80) {
-      const p1 = project(-360, gy, zFloor);
-      const p2 = project(360, gy, zFloor);
-      gridSvg += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="rgba(112,152,194,0.3)" stroke-width="0.8"/>`;
+    for (let gy = -270; gy <= 270; gy += 90) {
+      const p1 = project(-420, gy, zFloor);
+      const p2 = project(420, gy, zFloor);
+      gridSvg += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="rgba(112,152,194,0.25)" stroke-width="0.8"/>`;
+    }
+    // Floor coordinate crosshairs at grid intersections
+    for (let gx = -315; gx <= 315; gx += 210) {
+      for (let gy = -180; gy <= 180; gy += 180) {
+        const cp = project(gx, gy, zFloor);
+        gridSvg += `<circle cx="${cp.x}" cy="${cp.y}" r="2" fill="rgba(112,152,194,0.6)"/>`;
+      }
     }
     gridSvg += '</g>';
     svgContent += gridSvg;
@@ -166,19 +215,23 @@
       if (!info) continue;
       const gp = project(n.x - 410, n.y - 255, zFloor);
       const np = info.proj;
-      const isSelected = n.id === vulnVal;
-      const shadowColor = isSelected ? '#f46b7a' : (n.kind === 'business_flow' ? '#7098c2' : '#5ce1b3');
+      const isSelected = n.id === activeVuln;
+      const filamentColor = isSelected ? '#f46b7a' : (n.kind === 'business_flow' ? '#7098c2' : '#5ce1b3');
+      const filamentWidth = isSelected ? 1.8 : 1.0;
+      const filamentOpacity = isSelected ? 0.6 : 0.22;
 
       // Vertical laser filament
-      dropSvg += `<line x1="${gp.x}" y1="${gp.y}" x2="${np.x}" y2="${np.y}" stroke="rgba(255,255,255,0.18)" stroke-dasharray="3 3" stroke-width="1"/>`;
-      // Projected floor shadow ellipse
-      dropSvg += `<ellipse cx="${gp.x}" cy="${gp.y}" rx="${34 * gp.scale}" ry="${12 * gp.scale}" fill="rgba(0,0,0,0.55)" stroke="${shadowColor}" stroke-opacity="0.25" stroke-width="1"/>`;
+      dropSvg += `<line x1="${gp.x}" y1="${gp.y}" x2="${np.x}" y2="${np.y}" stroke="${filamentColor}" stroke-opacity="${filamentOpacity}" stroke-dasharray="3 3" stroke-width="${filamentWidth}"/>`;
+      // Projected floor shadow ellipse with outer glow ring
+      dropSvg += `<ellipse cx="${gp.x}" cy="${gp.y}" rx="${38 * gp.scale}" ry="${13 * gp.scale}" fill="rgba(0,0,0,0.6)" stroke="${filamentColor}" stroke-opacity="${isSelected ? 0.45 : 0.2}" stroke-width="1"/>`;
+      if (isSelected) {
+        dropSvg += `<circle cx="${gp.x}" cy="${gp.y}" r="${4 * gp.scale}" fill="#f46b7a" opacity="0.8"/>`;
+      }
     }
     dropSvg += '</g>';
     svgContent += dropSvg;
 
-    // Layer 3: 3D Edge Conduits (Bezier curves arched in 3D)
-    // Edges are sorted by average depth (deepest first)
+    // Layer 3: 3D Arched Laser Conduits (Edges)
     const edgeData = [];
     for (let idx = 0; idx < graph.edges.length; idx++) {
       const e = graph.edges[idx];
@@ -188,7 +241,7 @@
       const pa = aInfo.proj, pb = bInfo.proj;
       const midX = (aInfo.node.x + bInfo.node.x) / 2 - 410;
       const midY = (aInfo.node.y + bInfo.node.y) / 2 - 255;
-      const midZ = (aInfo.z + bInfo.z) / 2 + 35; // 3D elevated arch
+      const midZ = (aInfo.z + bInfo.z) / 2 + 36; // 3D elevated arch
       const pm = project(midX, midY, midZ);
 
       const isPivot = e.kind === 'CAN_PIVOT';
@@ -196,8 +249,22 @@
       const isThreat = !cut && threatEdges.has(e.id);
       const avgZ = (pa.z + pb.z) / 2;
 
+      // Calculate tangent vector at endpoint B to trim edge neatly at node card boundary
+      const bdx = pb.x - pm.x, bdy = pb.y - pm.y;
+      const bdist = Math.hypot(bdx, bdy) || 1;
+      const bux = bdx / bdist, buy = bdy / bdist;
+      const targetX = pb.x - bux * (44 * pb.scale);
+      const targetY = pb.y - buy * (22 * pb.scale);
+
+      // Calculate tangent vector at startpoint A to trim edge neatly at node card boundary
+      const adx = pm.x - pa.x, ady = pm.y - pa.y;
+      const adist = Math.hypot(adx, ady) || 1;
+      const aux = adx / adist, auy = ady / adist;
+      const startX = pa.x + aux * (38 * pa.scale);
+      const startY = pa.y + auy * (20 * pa.scale);
+
       edgeData.push({
-        edge: e, idx, pa, pb, pm, isPivot, cut, isThreat, avgZ
+        edge: e, idx, startX, startY, targetX, targetY, pm, isPivot, cut, isThreat, avgZ
       });
     }
 
@@ -206,14 +273,29 @@
 
     let edgesSvg = '<g class="edges-layer">';
     for (const ed of edgeData) {
-      const { edge: e, pa, pb, pm, isPivot, cut, isThreat } = ed;
+      const { startX, startY, targetX, targetY, pm, isPivot, cut, isThreat } = ed;
       const stroke = cut ? '#5ce1b3' : (isThreat ? '#f46b7a' : (isPivot ? '#50637a' : '#5c80a6'));
-      const width = cut ? 4.5 : (isThreat ? 3.2 : (isPivot ? 2.2 : 1.6));
+      const width = cut ? 4.2 : (isThreat ? 3.2 : (isPivot ? 2.0 : 1.5));
       const dash = cut ? '8 5' : (isPivot ? '' : '6 5');
-      const marker = isPivot ? 'url(#arrowR)' : 'url(#arrowB)';
+      const marker = cut ? 'url(#arrowG)' : (isPivot ? 'url(#arrowR)' : 'url(#arrowB)');
       const cls = cut ? 'edge-cut' : (isThreat ? 'edge-threat' : '');
 
-      edgesSvg += `<path d="M ${pa.x} ${pa.y} Q ${pm.x} ${pm.y} ${pb.x} ${pb.y}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-dasharray="${dash}" marker-end="${marker}" class="${cls}"/>`;
+      const dPath = `M ${startX} ${startY} Q ${pm.x} ${pm.y} ${targetX} ${targetY}`;
+
+      // Outer glow conduit for active threat or cut
+      if (isThreat) {
+        edgesSvg += `<path d="${dPath}" fill="none" stroke="rgba(244,107,122,0.35)" stroke-width="7" stroke-linecap="round" />`;
+      } else if (cut) {
+        edgesSvg += `<path d="${dPath}" fill="none" stroke="rgba(92,225,179,0.3)" stroke-width="8" stroke-linecap="round" />`;
+      }
+
+      // Base laser conduit
+      edgesSvg += `<path d="${dPath}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-dasharray="${dash}" marker-end="${marker}" class="${cls}"/>`;
+
+      // Extreme Savage Live Threat Laser Pulse
+      if (isThreat) {
+        edgesSvg += `<path d="${dPath}" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="16 110" class="edge-threat-pulse"/>`;
+      }
     }
     edgesSvg += '</g>';
     svgContent += edgesSvg;
@@ -226,35 +308,39 @@
     for (const info of sortedNodes) {
       const n = info.node, p = info.proj;
       const kind = n.kind;
-      const isVuln = n.id === vulnVal || n.id === 'auth-service';
+      const isVuln = n.id === activeVuln;
       const isBlocked = blockedNodes.has(n.id);
 
-      let color = kind === 'business_flow' ? '#7098c2' :
+      let color = isVuln ? '#f46b7a' :
+                  kind === 'business_flow' ? '#7098c2' :
                   kind === 'database' ? '#ffbe5e' :
                   kind === 'identity' ? '#f095ba' :
-                  isVuln ? '#f46b7a' : '#5ce1b3';
+                  '#5ce1b3';
       if (isBlocked) color = '#5ce1b3';
 
-      const w = 124 * p.scale;
+      const w = 126 * p.scale;
       const h = 42 * p.scale;
-      const rx = 9 * p.scale;
+      const rx = 8 * p.scale;
       const x = p.x - w / 2;
       const y = p.y - h / 2;
       const label = n.id.replaceAll('-', ' ');
+      const glyph = getNodeGlyph(kind, n.id);
 
-      nodesSvg += `<g data-node="${esc(n.id)}" style="cursor:grab">
+      nodesSvg += `<g data-node="${esc(n.id)}" class="node-pod ${isVuln ? 'node-vuln' : ''}" style="cursor:grab">
         <!-- Ambient drop shadow -->
-        <rect x="${x}" y="${y + 3 * p.scale}" width="${w}" height="${h}" rx="${rx}" fill="rgba(0,0,0,0.4)" />
+        <rect x="${x}" y="${y + 3 * p.scale}" width="${w}" height="${h}" rx="${rx}" fill="rgba(0,0,0,0.45)" />
         <!-- Engineered glass card body -->
-        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="url(#nodeGrad)" stroke="${color}" stroke-width="${isVuln ? 2.2 : 1.3}" />
-        <!-- Hairline top highlight (1px inset) -->
-        <line x1="${x + 6 * p.scale}" y1="${y + 1}" x2="${x + w - 6 * p.scale}" y2="${y + 1}" stroke="rgba(255,255,255,0.3)" stroke-width="1" />
-        <!-- Core status LED beacon -->
-        <circle cx="${x + 15 * p.scale}" cy="${p.y}" r="${3.5 * p.scale}" fill="${color}" />
-        <circle cx="${x + 15 * p.scale}" cy="${p.y}" r="${7 * p.scale}" fill="none" stroke="${color}" stroke-width="0.8" stroke-opacity="0.4" />
+        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${isVuln ? 'url(#glassSurfaceHot)' : 'url(#glassSurface)'}" stroke="${color}" stroke-width="${isVuln ? 2.2 : 1.3}" stroke-opacity="${isVuln ? 1 : 0.85}"/>
+        <!-- Hairline top highlight (1px inset rim) -->
+        <line x1="${x + 6 * p.scale}" y1="${y + 1}" x2="${x + w - 6 * p.scale}" y2="${y + 1}" stroke="rgba(255,255,255,0.32)" stroke-width="1" />
+        <!-- Luminous Horizon Line along bottom of node -->
+        <line x1="${x + 14 * p.scale}" y1="${y + h - 1}" x2="${x + w - 14 * p.scale}" y2="${y + h - 1}" stroke="${color}" stroke-opacity="${isVuln ? 0.9 : 0.4}" stroke-width="1.2" />
+        <!-- Category icon glyph badge -->
+        <rect x="${x + 7 * p.scale}" y="${p.y - 10 * p.scale}" width="${18 * p.scale}" height="${20 * p.scale}" rx="${4 * p.scale}" fill="rgba(255,255,255,0.06)" stroke="${color}" stroke-width="0.8" stroke-opacity="0.4"/>
+        <text x="${x + 16 * p.scale}" y="${p.y + 4 * p.scale}" text-anchor="middle" font-size="${10 * p.scale}px" fill="${color}">${glyph}</text>
         <!-- Node label -->
-        <text x="${x + 26 * p.scale}" y="${p.y + 4 * p.scale}" font-size="${10.5 * p.scale}px" font-weight="700" fill="#f0f5fa" font-family="Inter, system-ui, sans-serif">${esc(label)}</text>
-        <!-- Impact units -->
+        <text x="${x + 31 * p.scale}" y="${p.y + 4 * p.scale}" font-size="${10.5 * p.scale}px" font-weight="700" fill="#f0f5fa" font-family="'Space Grotesk', Inter, system-ui, sans-serif">${esc(label)}</text>
+        <!-- Impact units / subtitle -->
         ${n.value ? `<text x="${p.x}" y="${y + h + 13 * p.scale}" text-anchor="middle" fill="#8090a3" font-size="${9 * p.scale}px" font-family="ui-monospace, monospace">${n.value} impact units</text>` : ''}
       </g>`;
     }
@@ -264,22 +350,28 @@
     svg.innerHTML = svgContent;
   };
 
-  // Screen point coordinate helper
-  function pointOf(event) {
-    const point = svg.createSVGPoint();
-    point.x = event.clientX;
-    point.y = event.clientY;
-    const matrix = svg.getScreenCTM();
-    return matrix ? point.matrixTransform(matrix.inverse()) : null;
-  }
+  // Prevent context menu on SVG so right-click can pan freely
+  svg.addEventListener('contextmenu', e => e.preventDefault());
 
-  // Pointer Interaction: Drag node OR Orbit 3D Camera
+  // Pointer Interaction: Drag node OR Orbit / Pan 3D Camera
   svg.addEventListener('pointerdown', event => {
+    stopAutoOrbit();
     const el = event.target.closest('g[data-node]');
+
+    // Right-click, middle-click, or Shift + left-click initiates PAN
+    if (event.button === 2 || event.button === 1 || event.shiftKey) {
+      isPanning = true;
+      panStart = { x: event.clientX, y: event.clientY, panX: camera.panX, panY: camera.panY };
+      svg.classList.add('grabbing');
+      svg.setPointerCapture(event.pointerId);
+      return;
+    }
+
     if (el && graph) {
       // Node dragging
       dragging = { id: el.dataset.node, clientX: event.clientX, clientY: event.clientY };
       wasDrag = false;
+      activeGrabEl = el;
       el.classList.add('grabbing');
       svg.setPointerCapture(event.pointerId);
     } else {
@@ -292,17 +384,39 @@
   });
 
   svg.addEventListener('pointermove', event => {
+    if (isPanning) {
+      const dx = event.clientX - panStart.x;
+      const dy = event.clientY - panStart.y;
+      camera.panX = panStart.panX + dx;
+      camera.panY = panStart.panY + dy;
+      drawGraph();
+      return;
+    }
+
     if (dragging && graph) {
-      const dx = event.clientX - dragging.clientX;
-      const dy = event.clientY - dragging.clientY;
-      if (Math.hypot(dx, dy) > 5) wasDrag = true;
+      const dsx = event.clientX - dragging.clientX;
+      const dsy = event.clientY - dragging.clientY;
+      if (Math.hypot(dsx, dsy) > 4) wasDrag = true;
       if (!wasDrag) return;
 
       const node = graph.nodes.find(n => n.id === dragging.id);
       if (node) {
-        // Translate screen drag into 2D plane delta scaled by camera zoom
-        node.x = Math.max(65, Math.min(755, node.x + dx / camera.zoom));
-        node.y = Math.max(45, Math.min(465, node.y + dy / camera.zoom));
+        // True 3D Inverse Camera Projection Transformation
+        const radY = (camera.yaw * Math.PI) / 180;
+        const radP = (camera.pitch * Math.PI) / 180;
+        const cosY = Math.cos(radY), sinY = Math.sin(radY);
+        const cosP = Math.cos(radP), sinP = Math.sin(radP);
+        const safeCosY = Math.abs(cosY) > 0.15 ? cosY : (cosY >= 0 ? 0.15 : -0.15);
+        const safeCosP = Math.abs(cosP) > 0.15 ? cosP : 0.15;
+
+        const info = nodeProj ? null : null; // scale from camera
+        const scale = camera.zoom;
+        const dx_world = dsx / (scale * safeCosY);
+        const dy_world = (dsy - scale * sinY * sinP * dx_world) / (scale * safeCosP);
+
+        node.x = Math.max(65, Math.min(755, node.x + dx_world));
+        node.y = Math.max(45, Math.min(465, node.y + dy_world));
+
         dragging.clientX = event.clientX;
         dragging.clientY = event.clientY;
         drawGraph();
@@ -310,7 +424,7 @@
     } else if (isOrbiting) {
       const dx = event.clientX - orbitStart.x;
       const dy = event.clientY - orbitStart.y;
-      if (Math.hypot(dx, dy) > 5) wasDrag = true;
+      if (Math.hypot(dx, dy) > 4) wasDrag = true;
 
       camera.yaw = (orbitStart.yaw + dx * 0.35) % 360;
       camera.pitch = Math.max(0, Math.min(75, orbitStart.pitch - dy * 0.35));
@@ -318,22 +432,25 @@
     }
   });
 
-  svg.addEventListener('pointerup', () => {
+  const cleanupPointers = () => {
     dragging = null;
     isOrbiting = false;
+    isPanning = false;
+    if (activeGrabEl) {
+      activeGrabEl.classList.remove('grabbing');
+      activeGrabEl = null;
+    }
     svg.classList.remove('grabbing');
-  });
+  };
 
-  svg.addEventListener('pointercancel', () => {
-    dragging = null;
-    isOrbiting = false;
-    svg.classList.remove('grabbing');
-  });
+  svg.addEventListener('pointerup', cleanupPointers);
+  svg.addEventListener('pointercancel', cleanupPointers);
 
   // Mouse wheel zooms 3D camera
   svg.addEventListener('wheel', event => {
     event.preventDefault();
-    camera.zoom = Math.max(0.65, Math.min(2.2, camera.zoom - event.deltaY * 0.0012));
+    stopAutoOrbit();
+    camera.zoom = Math.max(0.55, Math.min(2.4, camera.zoom - event.deltaY * 0.0012));
     drawGraph();
   }, { passive: false });
 
@@ -348,18 +465,23 @@
   function setupHudControls() {
     const btnIso = document.getElementById('hud3dIso');
     const btnTilt = document.getElementById('hud3dTilt');
+    const btnBirdeye = document.getElementById('hud3dBirdeye');
     const btnFlat = document.getElementById('hud2dFlat');
     const btnAuto = document.getElementById('hudAutoOrbit');
+    const btnZoomIn = document.getElementById('hudZoomIn');
+    const btnZoomOut = document.getElementById('hudZoomOut');
     const btnReset = document.getElementById('hudReset');
 
     const updateActiveBtn = (active) => {
-      [btnIso, btnTilt, btnFlat].forEach(b => b?.classList.remove('active'));
+      [btnIso, btnTilt, btnBirdeye, btnFlat].forEach(b => b?.classList.remove('active'));
       active?.classList.add('active');
     };
 
     if (btnIso) {
       btnIso.addEventListener('click', () => {
+        stopAutoOrbit();
         camera.pitch = 28; camera.yaw = -24; camera.zoom = 1.05;
+        camera.panX = 0; camera.panY = 0;
         updateActiveBtn(btnIso);
         drawGraph();
       });
@@ -367,16 +489,44 @@
 
     if (btnTilt) {
       btnTilt.addEventListener('click', () => {
+        stopAutoOrbit();
         camera.pitch = 44; camera.yaw = 32; camera.zoom = 1.15;
+        camera.panX = 0; camera.panY = 0;
         updateActiveBtn(btnTilt);
+        drawGraph();
+      });
+    }
+
+    if (btnBirdeye) {
+      btnBirdeye.addEventListener('click', () => {
+        stopAutoOrbit();
+        camera.pitch = 56; camera.yaw = -12; camera.zoom = 1.1;
+        camera.panX = 0; camera.panY = 0;
+        updateActiveBtn(btnBirdeye);
         drawGraph();
       });
     }
 
     if (btnFlat) {
       btnFlat.addEventListener('click', () => {
+        stopAutoOrbit();
         camera.pitch = 0; camera.yaw = 0; camera.zoom = 1.0;
+        camera.panX = 0; camera.panY = 0;
         updateActiveBtn(btnFlat);
+        drawGraph();
+      });
+    }
+
+    if (btnZoomIn) {
+      btnZoomIn.addEventListener('click', () => {
+        camera.zoom = Math.min(2.4, camera.zoom + 0.15);
+        drawGraph();
+      });
+    }
+
+    if (btnZoomOut) {
+      btnZoomOut.addEventListener('click', () => {
+        camera.zoom = Math.max(0.55, camera.zoom - 0.15);
         drawGraph();
       });
     }
@@ -388,7 +538,7 @@
         if (autoOrbit) {
           const step = () => {
             if (!autoOrbit) return;
-            camera.yaw = (camera.yaw + 0.15) % 360;
+            camera.yaw = (camera.yaw + 0.2) % 360;
             drawGraph();
             orbitAnimId = requestAnimationFrame(step);
           };
@@ -402,6 +552,7 @@
 
     if (btnReset) {
       btnReset.addEventListener('click', () => {
+        stopAutoOrbit();
         camera.pitch = 26; camera.yaw = -22; camera.zoom = 1.05;
         camera.panX = 0; camera.panY = 0;
         updateActiveBtn(btnIso);
