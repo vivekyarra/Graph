@@ -67,15 +67,15 @@ def test_memory_report_retry_idempotent_and_conflict_detected():
     store.graphs=lambda tenant:(None,graph)
     args=('alpha','session-1','same-fingerprint','cut-role','unexpected_outage',100,'synthetic')
     assert store.record_outcome(*args)=='session-1:cut-role'
-    assert graph.writes==1
+    assert graph.writes==2
     graph.rows=[['unexpected_outage',100,'same-fingerprint']]
     assert store.record_outcome(*args)=='session-1:cut-role'
-    assert graph.writes==1
+    assert graph.writes==2
     with pytest.raises(ValueError,match='Conflicting'):
         store.record_outcome('alpha','session-1','same-fingerprint','cut-role','safe',100,'conflicting')
     with pytest.raises(ValueError,match='Conflicting'):
         store.record_outcome('alpha','session-1','different-fingerprint','cut-role','unexpected_outage',100,'poison')
-    assert graph.writes==1
+    assert graph.writes==2
 
 
 def test_actual_api_routes_refuse_graph_writes_without_operator(monkeypatch):

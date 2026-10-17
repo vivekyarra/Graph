@@ -1,8 +1,4 @@
-"""Optional MCP bridge. Install pip install -e '.[mcp]' and run module.
-
-No arbitrary Cypher. A caller can only invoke typed, bounded tools.
-"""
-import os
+"""Bounded FalkorDB MCP stdio tools. No arbitrary query or write capability."""
 from mcp.server.fastmcp import FastMCP
 from .api import store
 from .seed import dataset
@@ -12,30 +8,36 @@ mcp = FastMCP("MAELIN Graph Reasoning")
 
 
 @mcp.tool()
-def inspect_attack_paths(tenant: str = "alpha") -> dict:
-    """Bounded attack paths through the specific compromised service."""
-    d=dataset()
-    return {"paths":store().attack_paths(tenant,d["source"],d["vulnerable"],d["target"]),
-            "limit":"7 hops, up to 256 matching paths"}
+def inspect_attack_paths(tenant: str = "alpha", source: str = "internet",
+                         vulnerable: str = "auth-service", target: str = "customer-db") -> dict:
+    """Enumerate bounded graph-derived paths for a selected incident."""
+    return {"paths": store().attack_paths(tenant, source, vulnerable, target)}
 
 
 @mcp.tool()
 def inspect_business_dependencies(tenant: str = "alpha") -> dict:
-    """Graph-proven dependent customer flows with declared synthetic values."""
-    return {"dependency_paths":store().business_paths(tenant)}
+    """Read Cypher-derived business dependency paths."""
+    return {"dependency_paths": store().business_paths(tenant)}
 
 
 @mcp.tool()
-def recall_incident_outcomes(tenant: str = "alpha") -> dict:
-    """Tenant-isolated memory graph query, including outcome evidence status."""
-    return {"precedents":store().recall(tenant,dataset()["fingerprint"])}
+def recall_incident_outcomes(tenant: str = "alpha",
+                             fingerprint: str = "exploited-identity-to-customer-db") -> dict:
+    """Read tenant-scoped graph procedural and episodic evidence."""
+    return {"precedents": store().recall(tenant, fingerprint)}
+
+
+@mcp.tool()
+def list_candidate_interventions(tenant: str = "alpha") -> dict:
+    """Read candidate containment interventions from FalkorDB."""
+    return {"interventions": store().interventions(tenant)}
 
 
 @mcp.tool()
 def propose_containment(tenant: str = "alpha") -> dict:
-    """Three-agent safety pipeline. Generates plans only; never changes live systems."""
-    return investigate(store(),tenant,dataset())
+    """Execute the bounded agent pipeline without infrastructure changes."""
+    return investigate(store(), tenant, dataset())
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     mcp.run()

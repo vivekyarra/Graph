@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from .store import Store
 from .seed import dataset
+from .incident import select_scene
 from .agents import investigate
 from .simulator import run_simulation
 
@@ -25,6 +26,10 @@ def store():
 class Investigation(BaseModel):
     goal: str = Field(default="Minimize customer disruption and remediation cost",max_length=240)
     tenant: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,31}$", default="alpha")
+    source: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
+    vulnerable: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
+    target: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
+    alert: str | None = Field(default=None, max_length=400)
 
 
 class Simulation(BaseModel):
@@ -88,10 +93,12 @@ def graph(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_
 def run(req: Investigation, request: Request):
     require_operator(request)
     try:
-        return investigate(store(),req.tenant,dataset(),req.goal)
+        graph_store = store()
+        scene = select_scene(graph_store, req.tenant, req.source, req.vulnerable, req.target, req.alert)
+        return investigate(graph_store,req.tenant,scene,req.goal)
     except LookupError as e:
         raise HTTPException(409,str(e)) from e
-    except OverflowError as e:
+    except (OverflowError, ValueError) as e:
         raise HTTPException(422,str(e)) from e
     except Exception as e:
         # No silent memory/graph fallback, no hallucinated success.
@@ -105,7 +112,9 @@ def simulate(req: Simulation, request: Request):
     if os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS") != "1":
         raise HTTPException(403,"Simulation disabled; trusted demo mode only")
     try:
-        return run_simulation(store(),req.tenant,req.session_id,dataset(),req.action_ids)
+        graph_store = store()
+        scene = graph_store.session_scene(req.tenant, req.session_id)
+        return run_simulation(graph_store,req.tenant,req.session_id,scene,req.action_ids)
     except PermissionError as e:
         raise HTTPException(403,str(e)) from e
     except (ValueError,LookupError) as e:
@@ -125,7 +134,8 @@ def outcome(req: Outcome, request: Request):
         allowed=store().session_actions(req.tenant,req.session_id)
         if req.action_id not in allowed:
             raise HTTPException(403,"This action was not proposed in the named session/tenant")
-        ep=store().record_outcome(req.tenant,req.session_id,dataset()["fingerprint"],
+        scene = store().session_scene(req.tenant,req.session_id)
+        ep=store().record_outcome(req.tenant,req.session_id,scene["fingerprint"],
                                   req.action_id,req.outcome,req.cost_observed,req.note)
         return {"episode_id":ep,"evidence_status":"operator_report",
                 "note":"Future sessions consult this graph-backed reported outcome."}
