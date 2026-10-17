@@ -22,9 +22,9 @@ def inspect_business_dependencies(tenant: str = "alpha") -> dict:
 
 @mcp.tool()
 def recall_incident_outcomes(tenant: str = "alpha",
-                             fingerprint: str = "exploited-identity-to-customer-db") -> dict:
+                             fingerprint: str = "exploited-identity-to-customer-db", semantic_key: str = "") -> dict:
     """Read tenant-scoped graph procedural and episodic evidence."""
-    return {"precedents": store().recall(tenant, fingerprint)}
+    return {"precedents": store().recall(tenant, fingerprint, semantic_key or None)}
 
 
 @mcp.tool()

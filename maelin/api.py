@@ -157,7 +157,8 @@ def outcome(req: Outcome, request: Request):
             raise HTTPException(403,"This action was not proposed in the named session/tenant")
         scene = store().session_scene(req.tenant,req.session_id)
         ep=store().record_outcome(req.tenant,req.session_id,scene["fingerprint"],
-                                  req.action_id,req.outcome,req.cost_observed,req.note)
+                                  req.action_id,req.outcome,req.cost_observed,req.note,
+                                  semantic_key=scene.get("semantic_key"))
         return {"episode_id":ep,"evidence_status":"operator_report",
                 "note":"Future sessions consult this graph-backed reported outcome."}
     except HTTPException:
@@ -175,6 +176,16 @@ def trace(session_id:str, request: Request, tenant: str = Query("alpha",pattern=
         return {"handoffs":store().history(tenant,session_id)}
     except Exception as e:
         raise HTTPException(503,"Could not retrieve durable handoffs") from e
+
+
+@api.get("/api/conversation/{session_id}")
+def conversation(session_id: str, request: Request,
+                 tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
+    require_operator(request)
+    try:
+        return {"turns":store().conversation(tenant,session_id)}
+    except Exception as exc:
+        raise HTTPException(503,"Could not query FalkorDB conversation history") from exc
 
 
 @api.post("/api/demo/inject-shadow-route")

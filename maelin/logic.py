@@ -42,6 +42,8 @@ def analyze(paths, business_paths, actions, precedents=(), max_actions=3):
             # A single verified failure matters more than many guesses of success.
             reported = m.get("cost_observed", 60)
             loss = min(120, max(60, reported if _nonnegative_number(reported) else 60))
+            weight = m.get("memory_weight", 1)
+            loss = round(loss * weight) if _nonnegative_number(weight) and weight <= 1 else 60
             bad[m["action_id"]] = min(120, bad.get(m["action_id"], 0) + loss)
     plans = []
     for n in range(1, min(max_actions, len(actions)) + 1):

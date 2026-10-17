@@ -51,9 +51,11 @@ class MemoryAgent:
         ledger = store.history(tenant, sid)
         if not any(h["agent"]=="recon" and h["status"]=="mapped" for h in ledger):
             raise RuntimeError("Recon graph handoff missing; cannot coordinate")
+        semantic_key = scene.get("semantic_key")
         prior = graph_tool(store, tenant, sid, "recall_incident_outcomes",
-            {"fingerprint":scene["fingerprint"]},
-            lambda:store.recall(tenant,scene["fingerprint"]), "precedents")
+            {"fingerprint":scene["fingerprint"], "semantic_key":semantic_key or ""},
+            lambda:store.recall(tenant,scene["fingerprint"],semantic_key)
+            if hasattr(store,"graph_scene") else store.recall(tenant,scene["fingerprint"]), "precedents")
         store.handoff(tenant, sid, self.name, "recalled", {
             "fingerprint":scene["fingerprint"],"precedents":len(prior),
             "reported_failures":sum(x["outcome"]=="unexpected_outage" for x in prior),
@@ -115,9 +117,15 @@ def investigate(store, tenant, scene, goal="minimize customer disruption"):
     sid = store.new_session(tenant, scene["fingerprint"])
     if hasattr(store, "set_session_scene"):
         store.set_session_scene(tenant, sid, scene)
+    if hasattr(store, "log_turn"):
+        store.log_turn(tenant,sid,"operator","Goal: "+goal+"; alert: "+scene.get("alert",""))
     paths, business = ReconAgent().run(store,tenant,sid,scene)
     memory = MemoryAgent().run(store,tenant,sid,scene)
     result = RemediationAgent().run(store,tenant,sid,scene,goal)
+    if hasattr(store, "log_turn"):
+        picked=result.get("recommended")
+        store.log_turn(tenant,sid,"assistant",
+            "Graph-derived recommendation: "+(", ".join(picked["action_ids"]) if picked else "no complete cut"))
     return {"session_id":sid,"scene":scene["scenario"],"paths":paths,"business_paths":business,
             "precedents":memory,"analysis":result,"handoffs":store.history(tenant,sid),
             "safety":"Simulation and recommendations only. Never modifies infrastructure.",
