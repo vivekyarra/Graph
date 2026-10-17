@@ -116,6 +116,9 @@
   // Add evidence-bound specialist interpretation without changing the safety kernel.
   const originalHandoff=handoffSummary;
   handoffSummary=function(h){
+    if(h.agent==='recon'&&h.payload?.cypher_query&&$('cypherQuery')){
+      $('cypherQuery').textContent=h.payload.cypher_query+'\n'+JSON.stringify(h.payload.query_parameters,null,2);
+    }
     const base=originalHandoff(h);
     const r=h.payload?.llm_analysis || h.payload?.remediation_reasoning;
     return r?.conclusion ? base+' Model reasoning: '+r.conclusion : base;

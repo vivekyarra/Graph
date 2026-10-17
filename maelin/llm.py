@@ -8,15 +8,49 @@ import os
 
 
 def model_enabled():
-    return bool(os.getenv("OPENAI_API_KEY") or os.getenv("MAELIN_LLM_BASE_URL")) and os.getenv("MAELIN_USE_LLM", "auto").lower() not in {"0", "off", "false"}
+    return bool(os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("MAELIN_LLM_BASE_URL")) and os.getenv("MAELIN_USE_LLM", "auto").lower() not in {"0", "off", "false"}
 
 
 def make_client():
     from openai import OpenAI
-    options = {"timeout": 12.0, "api_key": os.getenv("OPENAI_API_KEY") or "ollama-local"}
+    options = {"timeout": 12.0, "api_key": os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY") or "ollama-local"}
     if os.getenv("MAELIN_LLM_BASE_URL"):
         options["base_url"] = os.environ["MAELIN_LLM_BASE_URL"]
+    elif os.getenv("GEMINI_API_KEY") and not os.getenv("OPENAI_API_KEY"):
+        options["base_url"] = "https://generativelanguage.googleapis.com/v1beta/openai/"
     return OpenAI(**options)
+
+
+def configured_model():
+    """Choose provider-appropriate default while accepting an explicit override."""
+    return os.getenv("MAELIN_LLM_MODEL") or (
+        "gemini-2.5-flash" if os.getenv("GEMINI_API_KEY") and not os.getenv("OPENAI_API_KEY")
+        else "gpt-4o-mini")
+
+
+def synthesize_recon_insight(paths, business_paths, scene):
+    affected = sorted({b["flow"] for b in business_paths
+                       if scene["vulnerable"] in b.get("nodes", [])})
+    return (f"Recon verified {len(paths)} bounded attack routes through "
+            f"{scene['vulnerable']} to {scene['target']} using FalkorDB Cypher. "
+            f"{len(business_paths)} graph dependency paths mapped; "
+            f"customer flows touching the suspected node: {', '.join(affected) or 'none'}.")
+
+
+def synthesize_memory_insight(precedents, fingerprint):
+    failures = [p for p in precedents if p.get("outcome") == "unexpected_outage"]
+    return (f"Memory found {len(precedents)} graph-backed outcome reports relevant to "
+            f"incident {fingerprint}; {len(failures)} flagged as operator-reported failures. "
+            "Records are evidence, not independently verified outages.")
+
+
+def synthesize_remediation_insight(recommended, baseline):
+    if not recommended:
+        return "No complete cut exists within the bounded catalog; do not execute partial containment."
+    return (f"Remediation found a full modeled graph cut with {len(recommended['action_ids'])} "
+            f"actions and {recommended['disruption_cost']} declared business-impact units. "
+            f"Naive emergency impact: {baseline['disruption_cost'] if baseline else 'unavailable'}. "
+            "These are synthetic costs; replay a FalkorDB clone to verify reachability.")
 
 
 def narrate(role, evidence):
@@ -25,7 +59,7 @@ def narrate(role, evidence):
         return None
     try:
         response = make_client().chat.completions.create(
-            model=os.getenv("MAELIN_LLM_MODEL", "gpt-4o-mini"),
+            model=configured_model(),
             messages=[
                 {"role":"system", "content": (
                     "You are a specialist incident-response reasoning agent. Your role: " + role +
@@ -67,7 +101,7 @@ def adjudicate(plans, goal="minimize customer disruption"):
                    for i,p in acceptable[:6]]
         c=make_client()
         r=c.chat.completions.create(
-            model=os.getenv("MAELIN_LLM_MODEL","gpt-4o-mini"),
+            model=configured_model(),
             messages=[
                 {"role":"system","content":"You are an incident-response planning agent. Select ONLY a numbered admissible intervention plan. The graph-based safety kernel already checked reachability. Prefer cheaper and fewer irreversible changes. Do not assert confirmed exploitation or claim real-world safety. You do not execute anything."},
                 {"role":"user","content":"Operator goal: "+goal+"\nVerified bounded counterfactual options: "+json.dumps(choices)}],

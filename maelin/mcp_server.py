@@ -34,9 +34,13 @@ def list_candidate_interventions(tenant: str = "alpha") -> dict:
 
 
 @mcp.tool()
-def propose_containment(tenant: str = "alpha") -> dict:
-    """Execute the bounded agent pipeline without infrastructure changes."""
-    return investigate(store(), tenant, dataset())
+def propose_containment(tenant: str = "alpha", source: str | None = None,
+                        vulnerable: str | None = None, target: str | None = None,
+                        goal: str = "Minimize customer disruption") -> dict:
+    """Validated dynamic graph investigation, never real infrastructure changes."""
+    from .incident import select_scene
+    scene = select_scene(store(), tenant, source, vulnerable, target)
+    return investigate(store(), tenant, scene, goal)
 
 
 if __name__ == "__main__":
