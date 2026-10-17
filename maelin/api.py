@@ -6,6 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from .store import Store
 from .seed import dataset
@@ -16,6 +17,7 @@ from .simulator import run_simulation
 
 api = FastAPI(title="MAELIN | Graph-native Incident Time Machine",version="0.1.0")
 STATIC = Path(__file__).resolve().parent.parent / "static"
+api.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 
 @lru_cache(maxsize=1)
@@ -93,6 +95,15 @@ def graph(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_
         return store().topology(tenant)
     except Exception as e:
         raise HTTPException(503,"Could not query FalkorDB topology") from e
+
+
+@api.get("/api/scene")
+def scene_defaults(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
+    require_operator(request)
+    try:
+        return store().graph_scene(tenant)
+    except Exception as exc:
+        raise HTTPException(503,"Could not read FalkorDB incident defaults") from exc
 
 
 @api.post("/api/scenarios", status_code=201)

@@ -65,6 +65,20 @@ with sync_playwright() as p:
     assert page.evaluate("current.analysis.recommended.action_ids.includes('invalidate-attacker-session')")
     page.screenshot(path=str(OUT/'04_topology_drift.png'),full_page=True)
     steps.append('Graph-derived topology drift: third threat path forces different plan')
+    import_data=json.loads((Path(__file__).parents[1]/'data'/'demo.json').read_text())
+    import_data['scenario']='Independent uploaded payments graph'
+    import_data['fingerprint']='payments-lab-case'
+    page.locator('#scenarioImport summary').click()
+    page.locator('#newTenant').fill('browser_custom')
+    page.locator('#scenarioJson').fill(json.dumps(import_data))
+    page.locator('#uploadScenario').click()
+    page.wait_for_function("document.querySelector('#importStatus').textContent.includes('Imported')")
+    assert page.locator('#tenant').input_value() == 'browser_custom'
+    page.locator('#investigate').click()
+    page.wait_for_function("document.querySelector('#pathsCount').textContent.trim()==='2'")
+    assert page.evaluate("current.scene==='Independent uploaded payments graph'")
+    page.screenshot(path=str(OUT/'05_custom_graph_from_import.png'),full_page=True)
+    steps.append('Upload independent FalkorDB graph and investigate its real Cypher paths')
     assert not page_errors, f'Unhandled JS errors: {page_errors}'
     video = page.video
     ctx.close()
