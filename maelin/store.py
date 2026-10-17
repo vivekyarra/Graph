@@ -17,6 +17,38 @@ def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _format_nodes(nodes):
+    if not isinstance(nodes, (list, tuple)):
+        return nodes
+    out = []
+    for n in nodes:
+        if hasattr(n, "properties"):
+            p = dict(n.properties)
+            p.setdefault("id", getattr(n, "id", None) or p.get("id"))
+            out.append(p)
+        elif isinstance(n, dict):
+            out.append(n)
+        else:
+            out.append({"id": str(n)})
+    return out
+
+
+def _format_rels(rels):
+    if not isinstance(rels, (list, tuple)):
+        return rels
+    out = []
+    for r in rels:
+        if hasattr(r, "properties"):
+            p = dict(r.properties)
+            p.setdefault("edge_id", p.get("edge_id", getattr(r, "id", None)))
+            out.append(p)
+        elif isinstance(r, dict):
+            out.append(r)
+        else:
+            out.append({"edge_id": str(r)})
+    return out
+
+
 class Store:
     def __init__(self, host="localhost", port=6379, password=None):
         self.db = FalkorDB(host=host, port=int(port), password=password,
@@ -28,6 +60,30 @@ class Store:
             raise ValueError("Invalid tenant. Use 1-32 lowercase alphanumeric characters, '_' or '-'.")
         return (self.db.select_graph(f"maelin_{tenant}_topology"),
                 self.db.select_graph(f"maelin_{tenant}_memory"))
+
+    def get_topology_graph(self, tenant: str):
+        topology, _ = self.graphs(tenant)
+        return topology
+
+    def compute_asset_centrality(self, tenant: str) -> list[dict]:
+        graph = self.get_topology_graph(tenant)
+        res = graph.query(
+            "CALL algo.pageRank('Asset', 'DEPENDS_ON') "
+            "YIELD node, score "
+            "RETURN node.id AS asset_id, node.role AS role, score "
+            "ORDER BY score DESC"
+        )
+        return [{"asset_id": r[0], "role": r[1], "centrality_score": round(float(r[2]), 4)} for r in res.result_set]
+
+    def team_ownership(self, tenant: str, asset_id: str | None = None) -> list[dict]:
+        g, _ = self.graphs(tenant)
+        if asset_id:
+            rows = g.ro_query("""MATCH (t:Team)-[:OWNS]->(a:Asset {id:$asset_id})
+RETURN t.id, t.name, t.lead, t.contact, a.id""", {"asset_id":asset_id}).result_set
+        else:
+            rows = g.ro_query("""MATCH (t:Team)-[:OWNS]->(a:Asset)
+RETURN t.id, t.name, t.lead, t.contact, a.id ORDER BY t.id, a.id""").result_set
+        return [{"team_id":r[0], "team_name":r[1], "lead":r[2], "contact":r[3], "asset_id":r[4]} for r in rows]
 
     def ready(self, tenant):
         topology, _ = self.graphs(tenant)
@@ -65,26 +121,37 @@ RETURN m.source, m.vulnerable, m.target, m.fingerprint, m.scenario LIMIT 2""").r
         g, _ = self.graphs(tenant)
         # Bounded enumeration rather than shortestPath, which can omit
         # dangerous longer routes when a shorter benign route exists.
+        # Explicitly return nodes(p) and relationships(p) in a single query
+        # for full hop-by-hop provenance.
         query = """MATCH p=(s:Asset {id:$source})-[:CAN_PIVOT*1..7]->(t:Asset {id:$target})
 WITH p WHERE ANY(n IN nodes(p) WHERE n.id = $vulnerable)
 RETURN [n IN nodes(p) | n.id] AS assets,
        [r IN relationships(p) | r.edge_id] AS pivots,
-       [r IN relationships(p) | r.evidence] AS edge_evidence LIMIT 257"""
+       [r IN relationships(p) | r.evidence] AS edge_evidence,
+       nodes(p) AS path_nodes,
+       relationships(p) AS path_relationships LIMIT 257"""
         rows = g.ro_query(query, {"source":source,"vulnerable":vulnerable,"target":target}).result_set
         if len(rows) > 256:
             raise OverflowError("More than 256 candidate attack paths. No containment conclusion is safe.")
-        return [{"nodes":r[0],"edges":r[1],
-                 "edge_evidence":r[2] if len(r)>2 else []} for r in rows]
+        return [{"nodes": r[0] if isinstance(r[0], list) else [r[0]],
+                 "edges": r[1] if isinstance(r[1], list) else [r[1]],
+                 "edge_evidence": r[2] if len(r) > 2 and r[2] is not None and isinstance(r[2], list) else [],
+                 "path_nodes": _format_nodes(r[3]) if len(r) > 3 and r[3] is not None else (r[0] if isinstance(r[0], list) else [r[0]]),
+                 "path_relationships": _format_rels(r[4]) if len(r) > 4 and r[4] is not None else (r[1] if isinstance(r[1], list) else [r[1]])}
+                for r in rows]
 
     def business_paths(self, tenant):
         g, _ = self.graphs(tenant)
         q = """MATCH p=(f:Asset)-[:DEPENDS_ON*1..7]->(s:Asset)
 WHERE f.kind='business_flow'
-RETURN f.id, f.value, [n IN nodes(p) | n.id] LIMIT 1025"""
+RETURN f.id, f.value, [n IN nodes(p) | n.id], nodes(p) AS path_nodes, relationships(p) AS path_relationships LIMIT 1025"""
         rows = g.ro_query(q).result_set
         if len(rows) > 1024:
             raise OverflowError("Business dependency enumeration exceeded limit; refuse plan scoring.")
-        return [{"flow":r[0],"value":r[1],"nodes":r[2]} for r in rows]
+        return [{"flow": r[0], "value": r[1], "nodes": r[2],
+                 "path_nodes": _format_nodes(r[3]) if len(r) > 3 and r[3] is not None else r[2],
+                 "path_relationships": _format_rels(r[4]) if len(r) > 4 and r[4] is not None else []}
+                for r in rows]
 
     def interventions(self, tenant):
         g, _ = self.graphs(tenant)
@@ -263,8 +330,8 @@ ON CREATE SET r.evidence='synthetic newly-discovered database path'""")
             topology.query("MATCH (n) DETACH DELETE n")
             memory.query("MATCH (n) DETACH DELETE n")
         for a in data["assets"]:
-            topology.query("""CREATE (:Asset {id:$id, kind:$kind, x:$x, y:$y, value:$value, critical:$critical})""",
-                {"id":a["id"],"kind":a["kind"],"x":a["x"],"y":a["y"],
+            topology.query("""CREATE (:Asset {id:$id, kind:$kind, role:$role, x:$x, y:$y, value:$value, critical:$critical})""",
+                {"id":a["id"],"kind":a["kind"],"role":a.get("role", a.get("kind", "asset")),"x":a["x"],"y":a["y"],
                  "value":a.get("value",0),"critical":a.get("critical",False)})
         for typ, field in (("CAN_PIVOT","pivot_edges"),("DEPENDS_ON","depends_edges")):
             # Only code-owned relationship type identifiers, never untrusted strings.
@@ -276,6 +343,14 @@ CREATE (a)-[:{typ} {{edge_id:$edge_id, evidence:$evidence}}]->(b)""",
         for a in data["actions"]:
             topology.query("""CREATE (:Intervention {id:$id, label:$label,
 blocked_nodes:$blocked_nodes, blocked_edges:$blocked_edges, cost:$cost, note:$note})""", a)
+        for team in data.get("teams", []):
+            topology.query("""CREATE (:Team {id:$id, name:$name, lead:$lead, contact:$contact})""",
+                {"id":team["id"], "name":team.get("name", team["id"]),
+                 "lead":team.get("lead", ""), "contact":team.get("contact", "")})
+        for own in data.get("team_ownership", []):
+            topology.query("""MATCH (t:Team {id:$team}), (a:Asset {id:$asset})
+CREATE (t)-[:OWNS]->(a)""",
+                {"team":own["team"], "asset":own["asset"]})
         topology.query("""CREATE (:GraphMetadata {
 source:$source, vulnerable:$vulnerable, target:$target,
 fingerprint:$fingerprint, scenario:$scenario})""",

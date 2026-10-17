@@ -46,7 +46,7 @@ def run_simulation(store, tenant, session_id, scene, action_ids):
     topo, _ = store.graphs(tenant)
     # Separate namespace per run also avoids the concurrency races of a shared
     # scratch graph. FalkorDB Graph.copy is a database-native graph operation.
-    graph_name = f"maelin_{tenant}_sim_{uuid.uuid4().hex}"
+    graph_name = f"maelin_{tenant}_sim_{uuid.uuid4().hex[:8]}"
     sim = topo.copy(graph_name)
     try:
         original = _threat_paths(sim, scene)

@@ -46,6 +46,7 @@
           <i id="led" class="led"></i>
           <span id="connectivity">Checking FalkorDB</span>
         </span>
+        <button id="resetDemo" class="warn" title="Reset tenant demo state back to pristine seed">↻ Reset Demo State</button>
         <button type="button" class="advisory-badge" id="advisoryToggle" title="Click to view persistence architecture details">
           ⟐ VERCEL SERVERLESS & FALKORDB
         </button>
@@ -312,6 +313,7 @@ function busy(flag) {
   $('investigate').disabled = flag;
   $('reload').disabled = flag;
   $('drift').disabled = flag;
+  if ($('resetDemo')) $('resetDemo').disabled = flag;
   $('simulate').disabled = flag || !current?.analysis?.plans?.length;
 }
 
@@ -457,6 +459,29 @@ $('drift').addEventListener('click', async () => {
 
 $('newSession').addEventListener('click', investigate);
 $('reload').addEventListener('click', refresh);
+
+async function resetDemoState() {
+  if (!confirm('Reset demo state for tenant "' + tenant() + '" to pristine initial seed?\nThis clears reported outages and restores clean topology.')) return;
+  busy(true);
+  try {
+    const res = await request('/api/demo/reset', {tenant: tenant()});
+    current = null; selection = 0;
+    $('plans').innerHTML = '<div class="blank">Demo state reset. Click Investigate incident to begin fresh.</div>';
+    $('memory').innerHTML = '<div class="blank">Memory cleared for this tenant.</div>';
+    $('handoffs').innerHTML = '<div class="blank">Agent ledger cleared.</div>';
+    $('record').disabled = true;
+    $('newSession').disabled = true;
+    $('simulate').disabled = true;
+    $('simulation').textContent = 'Pristine demo state restored in FalkorDB.';
+    await refresh();
+    alert(res.message || ('Demo state reset for tenant ' + tenant()));
+  } catch (e) {
+    alert('Reset failed: ' + e.message);
+  } finally {
+    busy(false);
+  }
+}
+$('resetDemo')?.addEventListener('click', resetDemoState);
 
 $('tenant').addEventListener('change', () => {
   current = null; selection = 0;

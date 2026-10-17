@@ -123,3 +123,26 @@ def test_real_judge_story_is_reproducible_and_disposable():
     assert evidence['memory_ablation']['recommendation_changed']
     assert evidence['old_plan_after_drift_remaining_routes']==1
     assert set(store.db.list_graphs())==prior, 'Judge proof must clean all disposable graphs'
+
+
+def test_real_algo_pagerank_and_team_ownership():
+    """Verify FalkorDB algo.pageRank and team ownership graph in real database."""
+    from maelin.store import Store
+    d=json.loads((Path(__file__).parents[1]/'data'/'demo.json').read_text())
+    store=Store(os.getenv('FALKOR_HOST','localhost'),os.getenv('FALKOR_PORT',6379),
+                os.getenv('FALKOR_PASSWORD'))
+    store.seed('ci_upgrades',d,reset=True)
+    try:
+        teams=store.team_ownership('ci_upgrades')
+        assert len(teams)>=3
+        assert any(t['team_id']=='secops' and t['asset_id']=='auth-service' for t in teams)
+        centrality=store.compute_asset_centrality('ci_upgrades')
+        assert isinstance(centrality, list)
+        assert len(centrality)>0
+        assert 'asset_id' in centrality[0]
+        assert 'centrality_score' in centrality[0]
+    finally:
+        topo, mem = store.graphs('ci_upgrades')
+        topo.delete()
+        mem.delete()
+

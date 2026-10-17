@@ -56,6 +56,10 @@ class Outcome(BaseModel):
     note: str = Field(default="Synthetic operator-reported incident",max_length=400)
 
 
+class DemoReset(BaseModel):
+    tenant: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,31}$", default="alpha")
+
+
 
 def require_operator(request: Request):
     """Fail closed for all graph-writing APIs except explicit local demo mode or demo token.
@@ -216,3 +220,43 @@ def inject_shadow_route(req: Investigation, request: Request):
         raise HTTPException(400, str(e)) from e
     except Exception as e:
         raise HTTPException(503, "Could not inject synthetic route in FalkorDB") from e
+
+
+@api.post("/api/demo/reset")
+def reset_demo_state(req: DemoReset, request: Request):
+    require_operator(request)
+    if os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS", "1") != "1":
+        raise HTTPException(403, "Demo reset disabled; trusted demo mode only")
+    try:
+        data = dataset()
+        store().seed(req.tenant, data, reset=True)
+        return {
+            "status": "reset_successful",
+            "tenant": req.tenant,
+            "message": f"Successfully re-seeded demo state for tenant {req.tenant!r}",
+            "nodes": len(data.get("assets", [])),
+            "pivot_edges": len(data.get("pivot_edges", [])),
+            "depends_edges": len(data.get("depends_edges", []))
+        }
+    except Exception as e:
+        raise HTTPException(503, f"Could not reset demo state: {type(e).__name__}") from e
+
+
+@api.get("/api/centrality")
+def asset_centrality(request: Request, tenant: str = Query("alpha", pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
+    require_operator(request)
+    try:
+        return {"centrality": store().compute_asset_centrality(tenant)}
+    except Exception as e:
+        raise HTTPException(503, f"FalkorDB centrality algorithm failed: {type(e).__name__}") from e
+
+
+@api.get("/api/teams")
+def team_ownership(request: Request, tenant: str = Query("alpha", pattern=r"^[a-z][a-z0-9_-]{0,31}$"),
+                   asset_id: str | None = None):
+    require_operator(request)
+    try:
+        return {"ownership": store().team_ownership(tenant, asset_id)}
+    except Exception as e:
+        raise HTTPException(503, f"Could not query team ownership: {type(e).__name__}") from e
+

@@ -8,18 +8,21 @@
     {
       "id": "internet",
       "kind": "ingress",
+      "role": "ingress",
       "x": 75,
       "y": 220
     },
     {
       "id": "edge-gateway",
       "kind": "service",
+      "role": "api_gateway",
       "x": 235,
       "y": 220
     },
     {
       "id": "auth-service",
       "kind": "service",
+      "role": "authentication",
       "x": 390,
       "y": 220,
       "critical": true
@@ -27,18 +30,21 @@
     {
       "id": "admin-role",
       "kind": "identity",
+      "role": "privileged_role",
       "x": 565,
       "y": 110
     },
     {
       "id": "vault-sync",
       "kind": "service",
+      "role": "secret_manager",
       "x": 565,
       "y": 330
     },
     {
       "id": "customer-db",
       "kind": "database",
+      "role": "primary_datastore",
       "x": 735,
       "y": 220,
       "critical": true
@@ -46,6 +52,7 @@
     {
       "id": "checkout",
       "kind": "business_flow",
+      "role": "revenue_flow",
       "value": 80,
       "x": 370,
       "y": 450
@@ -53,6 +60,7 @@
     {
       "id": "billing",
       "kind": "business_flow",
+      "role": "revenue_flow",
       "value": 45,
       "x": 530,
       "y": 450
@@ -60,6 +68,7 @@
     {
       "id": "sign-in",
       "kind": "business_flow",
+      "role": "user_flow",
       "value": 35,
       "x": 210,
       "y": 450
@@ -67,6 +76,7 @@
     {
       "id": "read-only-mirror",
       "kind": "service",
+      "role": "replica_service",
       "x": 690,
       "y": 60
     }
@@ -224,6 +234,56 @@
       ],
       "cost": 12,
       "note": "Contain the synthetic attack session before lateral movement; assumes session identity can be isolated"
+    }
+  ],
+  "teams": [
+    {
+      "id": "secops",
+      "name": "Identity-SecOps",
+      "lead": "Alice Chen",
+      "contact": "secops@maelin.local"
+    },
+    {
+      "id": "payments-platform",
+      "name": "Payments Core Team",
+      "lead": "Marcus Vance",
+      "contact": "payments@maelin.local"
+    },
+    {
+      "id": "data-infra",
+      "name": "Data Infrastructure",
+      "lead": "Devon Ray",
+      "contact": "datainfra@maelin.local"
+    }
+  ],
+  "team_ownership": [
+    {
+      "team": "secops",
+      "asset": "auth-service"
+    },
+    {
+      "team": "secops",
+      "asset": "admin-role"
+    },
+    {
+      "team": "payments-platform",
+      "asset": "checkout"
+    },
+    {
+      "team": "payments-platform",
+      "asset": "billing"
+    },
+    {
+      "team": "payments-platform",
+      "asset": "edge-gateway"
+    },
+    {
+      "team": "data-infra",
+      "asset": "customer-db"
+    },
+    {
+      "team": "data-infra",
+      "asset": "vault-sync"
     }
   ]
 }

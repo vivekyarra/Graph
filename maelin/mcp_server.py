@@ -43,5 +43,17 @@ def propose_containment(tenant: str = "alpha", source: str | None = None,
     return investigate(store(), tenant, scene, goal)
 
 
+@mcp.tool()
+def compute_asset_centrality(tenant: str = "alpha") -> dict:
+    """Compute PageRank centrality scores for infrastructure assets using FalkorDB algo.pageRank."""
+    return {"centrality": store().compute_asset_centrality(tenant)}
+
+
+@mcp.tool()
+def get_team_ownership(tenant: str = "alpha", asset_id: str = "") -> dict:
+    """Retrieve organizational ownership subgraph mapping teams to assets and services."""
+    return {"ownership": store().team_ownership(tenant, asset_id or None)}
+
+
 if __name__ == "__main__":
     mcp.run()

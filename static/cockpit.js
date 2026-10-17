@@ -575,6 +575,17 @@
         advDetails.style.display = advDetails.style.display === 'none' ? 'block' : 'none';
       });
     }
+
+    // 1-Click "Reset Demo State" button for judges and operators
+    const btnResetDemo = document.getElementById('resetDemo');
+    if (btnResetDemo && !btnResetDemo.dataset.hudWired) {
+      btnResetDemo.dataset.hudWired = 'true';
+      btnResetDemo.addEventListener('click', () => {
+        if (typeof resetDemoState === 'function') {
+          resetDemoState();
+        }
+      });
+    }
   }
 
   // Hook refresh to sync scenario scene defaults
