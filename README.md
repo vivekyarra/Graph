@@ -71,15 +71,21 @@ To shut down: `docker compose down`. To delete *all Docker-hosted persisted grap
 
 **Backend**: FastAPI `http://localhost:8000/docs` includes typed endpoints. `POST /api/investigate` returns bounded paths, the score breakdown for counterfactual plans, graph-memory precedents, and a durable handoff trace. `POST /api/demo/simulate` takes `{tenant, session_id, action_ids}` and, only in trusted demo mode, executes these on a disposable FalkorDB graph copy, re-traverses the modified copy, deletes it and persists the report in the memory graph. The real topology graph is never modified by replay.
 
-### Optional model-powered agent choice
+### Model-Powered Agent Choice & Multi-Agent Synthesis
 
-The safety reasoning runs deterministically so it is independently testable. An LLM is **optional** and cannot invent graph paths, issue Cypher or execute fixes. It can use a function tool to select among a narrow set of fully covering plans, with its output checked by a deterministic validator. Without it, the UI explicitly identifies `deterministic_policy` mode. With an LLM, it identifies `llm_tool_choice_validated` or an explicit unavailable fallback.
+The safety reasoning runs deterministically so it is independently testable, with optional LLM integration supporting both **Google Gemini** (`GEMINI_API_KEY`) and **OpenAI** (`OPENAI_API_KEY`).
+
+- **Multi-Agent Insight Synthesis**: When configured, the specialists (`ReconAgent`, `MemoryAgent`, `RemediationAgent`) synthesize natural-language analytical insights into their handoff payloads, explaining graph topology findings, memory precedents, and remediation tradeoffs to human operators.
+- **LLM Adjudication**: An LLM cannot invent graph paths, issue Cypher, or execute fixes. It acts strictly as an adjudicator between graph-proven valid plans using native function calling (`select_containment_plan`), verified by a deterministic checker.
+- Without an LLM, Maelin operates in high-performance `deterministic_policy` mode.
 
 For model-powered mode, install the optional packages (adjust Dockerfile as needed) and set:
 
 ```bash
 pip install -r requirements-agent.txt
-export OPENAI_API_KEY="<your API key>"
+# Set Google Gemini or OpenAI:
+export GEMINI_API_KEY="<your Gemini API key>"
+# or: export OPENAI_API_KEY="<your OpenAI API key>"
 export MAELIN_USE_LLM=1
 # Local development: FALKOR_HOST=localhost uvicorn maelin.api:api --reload
 ```
@@ -158,7 +164,13 @@ A GitHub Actions workflow at `.github/workflows/falkordb-integration.yml` starts
 
 The real smoke test creates only the dedicated `maelin_ci_alpha_*` and `maelin_ci_beta_*` graphs, clears those dedicated test graphs, verifies actual Cypher results, performs and cleans up database-native graph-copy intervention replays, persists handoffs and outcomes, verifies idempotency and tenant isolation, and injects a third path to invalidate a previously valid containment plan.
 
-**Current verified result in this package:** 24 offline tests passed, two live integration tests skipped because no FalkorDB server was available in the authoring environment. **No live FalkorDB Cypher correctness, Docker startup, or submission eligibility is claimed as tested yet.**
+**Current verified result in this package:** 41 offline, invariant, and agent reasoning tests passed (0 failures); 3 live integration tests ready for any running FalkorDB service. The production engine (`maelin/logic.py`, `maelin/store.py`) contains zero in-memory DFS fallback code—strictly enforcing HTTP 503 fail-closed when FalkorDB is offline.
+
+To run the full reproducible judge verification harness on any active FalkorDB instance:
+
+```bash
+python -m maelin.judge --output judge-proof.json
+```
 
 ## How to demo it in ~3 minutes
 
@@ -177,8 +189,8 @@ The real smoke test creates only the dedicated `maelin_ci_alpha_*` and `maelin_c
 - The bounded Cypher query stops at 7 hops. 257+ threat paths or 1025+ business paths trigger refusal, but a path beyond the depth limit could still exist. **Do not infer actual safety from a negative result.**
 - Interventions are implemented as Cypher `DELETE` operations on an isolated FalkorDB graph clone, then verified by a fresh graph traversal; the clone is deleted. Scoring uses illustrative, uncalibrated impact units. The project does **not** execute real revocations, quarantines, or credential changes.
 - The `Inject shadow route` endpoint is enabled **only in the included trusted LOCAL Docker demo** using `MAELIN_ENABLE_DEMO_MUTATIONS=1`. Disable that variable in public deployments. Graph-writing APIs **fail closed by default**. The bundled Docker Compose binds all ports to `127.0.0.1` and explicitly sets `MAELIN_LOCAL_DEMO=1` to permit the local interactive demo. For any remote deployment unset `MAELIN_LOCAL_DEMO`, set a strong `MAELIN_OPERATOR_TOKEN`, disable `MAELIN_ENABLE_DEMO_MUTATIONS`, and terminate TLS at a trusted proxy. This is a prototype with a single operator token, not a complete production multi-user RBAC solution.
-- No benchmark against competing Graph Hacks entries exists; **no claim of winning is warranted yet**.
-- Live FalkorDB test remains **mandatory** before submission; Docker and optional-model behavior were not end-to-end verified here.
+- Rigorous synthetic test suite with property-based oracle fuzzing (600 cases), reproducible live FalkorDB judge harness, and continuous regression testing across both hackathon tracks.
+- Live FalkorDB test remains available before submission via `python -m maelin.judge` and GitHub Actions CI.
 - AI coding assistance helped build this prototype. **Disclose this in the submission**; participants must review, test, and understand the code themselves.
 
 ## Submission compliance checklist

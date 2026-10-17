@@ -76,11 +76,16 @@ ORDER BY a.id""").result_set
         return [{"id":r[0],"label":r[1],"blocked_nodes":r[2] or [],
                  "blocked_edges":r[3] or [],"cost":r[4],"note":r[5]} for r in rows]
 
-    def recall(self, tenant, fingerprint):
+    def recall(self, tenant, fingerprint, component=None):
         _, g = self.graphs(tenant)
         rows = g.ro_query("""MATCH (e:Episode {fingerprint:$fingerprint})-[:OBSERVED]->(a:ActionExperience)
 RETURN a.action_id, a.outcome, a.cost_observed, a.evidence_status, e.created, e.id
 ORDER BY e.created DESC LIMIT 30""", {"fingerprint":fingerprint}).result_set
+        if not rows and component:
+            rows = g.ro_query("""MATCH (e:Episode)-[:OBSERVED]->(a:ActionExperience)
+WHERE a.action_id CONTAINS $component OR e.fingerprint CONTAINS $component
+RETURN a.action_id, a.outcome, a.cost_observed, a.evidence_status, e.created, e.id
+ORDER BY e.created DESC LIMIT 30""", {"component":component}).result_set
         return [{"action_id":r[0],"outcome":r[1],"cost_observed":r[2],
                  "evidence_status":r[3],"created":r[4],"episode_id":r[5]} for r in rows]
 

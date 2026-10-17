@@ -23,8 +23,12 @@ def store():
 
 
 class Investigation(BaseModel):
-    goal: str = Field(default="Minimize customer disruption and remediation cost",max_length=240)
+    goal: str = Field(default="Minimize customer disruption and remediation cost", max_length=240)
     tenant: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,31}$", default="alpha")
+    source: str | None = Field(default=None, max_length=64)
+    vulnerable: str | None = Field(default=None, max_length=64)
+    target: str | None = Field(default=None, max_length=64)
+    scenario_name: str | None = Field(default=None, max_length=120)
 
 
 class Simulation(BaseModel):
@@ -88,7 +92,17 @@ def graph(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_
 def run(req: Investigation, request: Request):
     require_operator(request)
     try:
-        return investigate(store(),req.tenant,dataset(),req.goal)
+        scene = dataset().copy()
+        if req.source:
+            scene["source"] = req.source
+        if req.vulnerable:
+            scene["vulnerable"] = req.vulnerable
+            scene["fingerprint"] = f"exploited-{req.vulnerable}-to-{req.target or scene['target']}"
+        if req.target:
+            scene["target"] = req.target
+        if req.scenario_name:
+            scene["scenario"] = req.scenario_name
+        return investigate(store(), req.tenant, scene, req.goal)
     except LookupError as e:
         raise HTTPException(409,str(e)) from e
     except OverflowError as e:
