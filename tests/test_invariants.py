@@ -25,6 +25,24 @@ def test_mcp_has_no_arbitrary_query_tool():
     assert 'execute_cypher' not in src
 
 
+def test_production_logic_has_no_python_graph_traversal():
+    src=(ROOT/'maelin'/'logic.py').read_text()
+    assert 'def traversal_fallback' not in src
+    assert 'def dfs(' not in src
+    assert (ROOT/'tests'/'offline_graph.py').exists()
+
+
+def test_dynamic_graph_and_mcp_judge_requirements_are_wired():
+    api=(ROOT/'maelin'/'api.py').read_text()
+    agents=(ROOT/'maelin'/'agents.py').read_text()
+    assert '@api.post("/api/scenarios"' in api
+    assert '/api/conversation/' in api
+    assert 'reason_with_tools(' in agents
+    assert 'graph_tool(' in agents
+    assert 'call_tool(' in (ROOT/'maelin'/'mcp_client.py').read_text()
+    assert 'class=' in (ROOT/'static'/'cockpit.css').read_text() or 'edge-cut' in (ROOT/'static'/'cockpit.css').read_text()
+
+
 def test_seed_data_is_synthetic_and_all_relations_have_known_endpoints():
     import json
     d=json.loads((ROOT/'data'/'demo.json').read_text())

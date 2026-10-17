@@ -50,6 +50,50 @@ def test_real_cypher_traversals_and_durable_memory():
     assert not any(name.startswith('maelin_ci_alpha_sim_') for name in store.db.list_graphs())
 
 
+def test_semantic_memory_and_conversation_are_real_graph_nodes():
+    """A related incident retrieves discounted precedent via Cypher semantic pattern."""
+    from maelin.store import Store
+    from maelin.incident import select_scene
+    from maelin.agents import investigate
+    d=json.loads((Path(__file__).parents[1]/'data'/'demo.json').read_text())
+    s=Store(os.getenv("FALKOR_HOST","localhost"),os.getenv("FALKOR_PORT",6379))
+    s.seed("ci_semantic",d,reset=True)
+    base=select_scene(s,"ci_semantic")
+    cold=investigate(s,"ci_semantic",base)
+    history=s.conversation("ci_semantic",cold["session_id"])
+    assert [x["role"] for x in history]==["operator","assistant"]
+    s.record_outcome("ci_semantic",cold["session_id"],base["fingerprint"],
+                     "revoke-admin-role","unexpected_outage",100,
+                     "synthetic report", semantic_key=base["semantic_key"])
+    related=select_scene(s,"ci_semantic",vulnerable="vault-sync")
+    assert related["fingerprint"]!=base["fingerprint"]
+    assert related["semantic_key"]==base["semantic_key"]
+    recalled=s.recall("ci_semantic",related["fingerprint"],related["semantic_key"])
+    assert len(recalled)==1 and recalled[0]["match_type"]=="semantic"
+    assert recalled[0]["memory_weight"]==0.25
+    _,memory=s.graphs("ci_semantic")
+    assert memory.ro_query("MATCH (p:Procedure) RETURN p LIMIT 1").result_set
+    assert memory.ro_query("MATCH (k:SemanticPattern) RETURN k LIMIT 1").result_set
+
+
+def test_second_imported_topology_uses_its_own_db_metadata():
+    from maelin.store import Store
+    from maelin.incident import select_scene
+    from maelin.schema import validate_dataset
+    d=json.loads((Path(__file__).parents[1]/'data'/'demo.json').read_text())
+    d["scenario"]="Independent synthetic billing incident"
+    d["fingerprint"]="incident-billing-2"
+    d["vulnerable"]="vault-sync"
+    d["target"]="customer-db"
+    d=validate_dataset(d)
+    s=Store(os.getenv("FALKOR_HOST","localhost"),os.getenv("FALKOR_PORT",6379))
+    s.seed("ci_uploaded",d,reset=True)
+    scene=select_scene(s,"ci_uploaded")
+    assert scene["scenario"]=="Independent synthetic billing incident"
+    assert scene["vulnerable"]=="vault-sync"
+    assert scene["fingerprint"]=="incident-billing-2"
+
+
 def test_real_concurrent_session_handoffs_are_tenant_scoped():
     from concurrent.futures import ThreadPoolExecutor
     from maelin.store import Store

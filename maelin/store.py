@@ -3,6 +3,7 @@
 No SQLite, JSON state, or vector-store fallback is used by the service.
 """
 import json
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -18,7 +19,9 @@ def iso_now():
 
 class Store:
     def __init__(self, host="localhost", port=6379, password=None):
-        self.db = FalkorDB(host=host, port=int(port), password=password)
+        self.db = FalkorDB(host=host, port=int(port), password=password,
+                           username=os.getenv("FALKOR_USERNAME") or None,
+                           ssl=os.getenv("FALKOR_SSL","0").lower() in {"1","true","yes"})
 
     def graphs(self, tenant):
         if not TENANT.fullmatch(tenant):
