@@ -5,7 +5,8 @@ not three separate LLM calls masquerading as experts. Optional language-model
 integration can be layered on top without granting it direct Cypher access.
 """
 from .logic import analyze
-from .llm import adjudicate, narrate
+from .llm import adjudicate
+from .reasoner import reason_with_tools
 import os
 
 
@@ -38,8 +39,8 @@ class ReconAgent:
             "verified_path_payload":paths,"customer_dependency_payload":business,
             "source":scene["source"], "vulnerable":scene["vulnerable"], "target":scene["target"],
             "query_limits":"max depth 7, max 256 threat paths, max 1024 business paths",
-            "llm_analysis":narrate("recon",{"source":scene["source"],"vulnerable":scene["vulnerable"],
-                "target":scene["target"],"attack_paths":len(paths),"business_dependencies":len(business)})})
+             "llm_analysis":reason_with_tools("recon",store,tenant,sid,scene,
+                {"attack_paths":paths[:6],"business_dependencies":business[:8]})})
         return paths, business
 
 
@@ -60,7 +61,7 @@ class MemoryAgent:
             "fingerprint":scene["fingerprint"],"precedents":len(prior),
             "reported_failures":sum(x["outcome"]=="unexpected_outage" for x in prior),
             "recalled_experiences":prior,
-            "llm_analysis":narrate("memory",{"precedents":prior[:10]})})
+            "llm_analysis":reason_with_tools("memory",store,tenant,sid,scene,{"precedents":prior[:10]})})
         return prior
 
 
@@ -99,6 +100,10 @@ class RemediationAgent:
         naive = next((a for a in interventions if a["id"] == "quarantine-auth"), None)
         baseline = analyze(paths, business, [naive], ()) if naive else None
         result["naive_emergency_brake"] = baseline["recommended"] if baseline else None
+        result["remediation_reasoning"] = reason_with_tools(
+            "remediation",store,tenant,sid,scene,
+            {"goal":goal,"candidate_plans":[{"actions":p["action_ids"],"score":p["score"],
+                "impact":p["disruption_cost"]} for p in result["plans"][:8]]})
         result["agent_choice"] = adjudicate(result["plans"],goal)
         # The approved action IDs are persisted as a session-scoped graph handoff.
         offered = sorted(set(id for p in result["plans"] for id in p["action_ids"]))
@@ -107,6 +112,7 @@ class RemediationAgent:
             "candidate_plans":len(result["plans"]),
             "recommended":result["recommended"]["action_ids"] if result["recommended"] else None,
             "outcome":result["reason"],"agent_choice":result["agent_choice"],
+            "remediation_reasoning":result["remediation_reasoning"],
             "memory_ablation":result["memory_ablation"]})
         return result
 

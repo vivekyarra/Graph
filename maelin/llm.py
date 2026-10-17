@@ -8,7 +8,15 @@ import os
 
 
 def model_enabled():
-    return bool(os.getenv("OPENAI_API_KEY")) and os.getenv("MAELIN_USE_LLM", "auto").lower() not in {"0", "off", "false"}
+    return bool(os.getenv("OPENAI_API_KEY") or os.getenv("MAELIN_LLM_BASE_URL")) and os.getenv("MAELIN_USE_LLM", "auto").lower() not in {"0", "off", "false"}
+
+
+def make_client():
+    from openai import OpenAI
+    options = {"timeout": 12.0, "api_key": os.getenv("OPENAI_API_KEY") or "ollama-local"}
+    if os.getenv("MAELIN_LLM_BASE_URL"):
+        options["base_url"] = os.environ["MAELIN_LLM_BASE_URL"]
+    return OpenAI(**options)
 
 
 def narrate(role, evidence):
@@ -16,8 +24,7 @@ def narrate(role, evidence):
     if not model_enabled():
         return None
     try:
-        from openai import OpenAI
-        response = OpenAI(timeout=12.0).chat.completions.create(
+        response = make_client().chat.completions.create(
             model=os.getenv("MAELIN_LLM_MODEL", "gpt-4o-mini"),
             messages=[
                 {"role":"system", "content": (
@@ -52,14 +59,13 @@ def adjudicate(plans, goal="minimize customer disruption"):
     if not model_enabled():
         return deterministic
     try:
-        from openai import OpenAI
         # Only give the model admissible plans within four score units of the
         # deterministic optimum. It cannot expand the safety envelope.
         acceptable = [(i,p) for i,p in enumerate(plans) if p["score"]<=plans[0]["score"]+4]
         choices = [{"index":i,"actions":p["actions"],"score":p["score"],
                     "disruption_cost":p["disruption_cost"],"memory_penalty":p["memory_penalty"]}
                    for i,p in acceptable[:6]]
-        c=OpenAI(timeout=12.0)
+        c=make_client()
         r=c.chat.completions.create(
             model=os.getenv("MAELIN_LLM_MODEL","gpt-4o-mini"),
             messages=[
