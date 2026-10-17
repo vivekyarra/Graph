@@ -6,15 +6,18 @@ from functools import lru_cache
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from .store import Store
 from .seed import dataset
 from .incident import select_scene
+from .schema import validate_dataset
 from .agents import investigate
 from .simulator import run_simulation
 
 api = FastAPI(title="MAELIN | Graph-native Incident Time Machine",version="0.1.0")
 STATIC = Path(__file__).resolve().parent.parent / "static"
+api.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 
 @lru_cache(maxsize=1)
@@ -24,13 +27,18 @@ def store():
 
 
 class Investigation(BaseModel):
-    goal: str = Field(default="Minimize customer disruption and remediation cost", max_length=240)
+    goal: str = Field(default="Minimize customer disruption and remediation cost",max_length=240)
     tenant: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,31}$", default="alpha")
     source: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
     vulnerable: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
     target: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
     alert: str | None = Field(default=None, max_length=400)
     scenario_name: str | None = Field(default=None, max_length=120)
+
+
+class ScenarioUpload(BaseModel):
+    tenant: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,31}$")
+    dataset: dict
 
 
 class Simulation(BaseModel):
@@ -90,6 +98,30 @@ def graph(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_
         raise HTTPException(503,"Could not query FalkorDB topology") from e
 
 
+@api.get("/api/scene")
+def scene_defaults(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
+    require_operator(request)
+    try:
+        return store().graph_scene(tenant)
+    except Exception as exc:
+        raise HTTPException(503,"Could not read FalkorDB incident defaults") from exc
+
+
+@api.post("/api/scenarios", status_code=201)
+def upload_scenario(req: ScenarioUpload, request: Request):
+    require_operator(request)
+    try:
+        data = validate_dataset(req.dataset)
+        # Never overwrite an existing tenant. All topology remains in FalkorDB.
+        store().seed(req.tenant, data, reset=False)
+        return {"tenant":req.tenant, "nodes":len(data["assets"]),
+                "pivot_edges":len(data["pivot_edges"]), "status":"seeded_in_falkordb"}
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, f"Scenario upload failed: {type(exc).__name__}") from exc
+
+
 @api.post("/api/investigate")
 def run(req: Investigation, request: Request):
     require_operator(request)
@@ -97,8 +129,8 @@ def run(req: Investigation, request: Request):
         graph_store = store()
         scene = select_scene(graph_store, req.tenant, req.source, req.vulnerable, req.target, req.alert)
         if req.scenario_name:
-            scene["scenario"] = req.scenario_name
-        return investigate(graph_store, req.tenant, scene, req.goal)
+            scene["scenario"]=req.scenario_name
+        return investigate(graph_store,req.tenant,scene,req.goal)
     except LookupError as e:
         raise HTTPException(409,str(e)) from e
     except (OverflowError, ValueError) as e:
@@ -139,7 +171,8 @@ def outcome(req: Outcome, request: Request):
             raise HTTPException(403,"This action was not proposed in the named session/tenant")
         scene = store().session_scene(req.tenant,req.session_id)
         ep=store().record_outcome(req.tenant,req.session_id,scene["fingerprint"],
-                                  req.action_id,req.outcome,req.cost_observed,req.note)
+                                  req.action_id,req.outcome,req.cost_observed,req.note,
+                                  semantic_key=scene.get("semantic_key"))
         return {"episode_id":ep,"evidence_status":"operator_report",
                 "note":"Future sessions consult this graph-backed reported outcome."}
     except HTTPException:
@@ -157,6 +190,16 @@ def trace(session_id:str, request: Request, tenant: str = Query("alpha",pattern=
         return {"handoffs":store().history(tenant,session_id)}
     except Exception as e:
         raise HTTPException(503,"Could not retrieve durable handoffs") from e
+
+
+@api.get("/api/conversation/{session_id}")
+def conversation(session_id: str, request: Request,
+                 tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
+    require_operator(request)
+    try:
+        return {"turns":store().conversation(tenant,session_id)}
+    except Exception as exc:
+        raise HTTPException(503,"Could not query FalkorDB conversation history") from exc
 
 
 @api.post("/api/demo/inject-shadow-route")

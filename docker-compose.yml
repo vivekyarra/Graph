@@ -16,6 +16,7 @@ services:
       MAELIN_USE_LLM: 'auto' # optional model calls if a key is supplied
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       MAELIN_LLM_MODEL: ${MAELIN_LLM_MODEL:-gpt-4o-mini}
+      MAELIN_LLM_BASE_URL: ${MAELIN_LLM_BASE_URL:-} # Ollama-compatible /v1 or other OpenAI-compatible endpoint
       MAELIN_ENABLE_DEMO_MUTATIONS: '1' # trusted LOCAL demo only
       MAELIN_LOCAL_DEMO: '1' # bypasses operator token only on localhost-bound Compose
     ports:

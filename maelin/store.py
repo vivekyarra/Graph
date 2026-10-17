@@ -3,6 +3,7 @@
 No SQLite, JSON state, or vector-store fallback is used by the service.
 """
 import json
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -18,7 +19,9 @@ def iso_now():
 
 class Store:
     def __init__(self, host="localhost", port=6379, password=None):
-        self.db = FalkorDB(host=host, port=int(port), password=password)
+        self.db = FalkorDB(host=host, port=int(port), password=password,
+                           username=os.getenv("FALKOR_USERNAME") or None,
+                           ssl=os.getenv("FALKOR_SSL","0").lower() in {"1","true","yes"})
 
     def graphs(self, tenant):
         if not TENANT.fullmatch(tenant):
@@ -42,6 +45,21 @@ class Store:
             "nodes": [{"id":n[0],"kind":n[1],"x":n[2],"y":n[3],"value":n[4]} for n in ns],
             "edges": [{"from":e[0],"to":e[1],"kind":e[2],"id":e[3]} for e in es],
         }
+
+    def graph_scene(self, tenant):
+        """Read the uploaded incident's defaults from the real topology graph."""
+        g, _ = self.graphs(tenant)
+        rows = g.ro_query("""MATCH (m:GraphMetadata)
+RETURN m.source, m.vulnerable, m.target, m.fingerprint, m.scenario LIMIT 2""").result_set
+        if len(rows) > 1:
+            raise ValueError("Ambiguous graph metadata")
+        if not rows:
+            # Existing, already seeded demo graphs predate GraphMetadata.
+            from .seed import dataset
+            return dataset()
+        row = rows[0]
+        return {"source":row[0], "vulnerable":row[1], "target":row[2],
+                "fingerprint":row[3], "scenario":row[4]}
 
     def attack_paths(self, tenant, source, vulnerable, target):
         g, _ = self.graphs(tenant)
@@ -76,18 +94,27 @@ ORDER BY a.id""").result_set
         return [{"id":r[0],"label":r[1],"blocked_nodes":r[2] or [],
                  "blocked_edges":r[3] or [],"cost":r[4],"note":r[5]} for r in rows]
 
-    def recall(self, tenant, fingerprint, component=None):
+    def recall(self, tenant, fingerprint, semantic_key=None):
         _, g = self.graphs(tenant)
         rows = g.ro_query("""MATCH (p:IncidentPattern {fingerprint:$fingerprint})-[:HAS_EPISODE]->(e:Episode)-[:OBSERVED]->(a:ActionExperience)
 RETURN a.action_id, a.outcome, a.cost_observed, a.evidence_status, e.created, e.id
 ORDER BY e.created DESC LIMIT 30""", {"fingerprint":fingerprint}).result_set
-        if not rows and component:
-            rows = g.ro_query("""MATCH (e:Episode)-[:OBSERVED]->(a:ActionExperience)
-WHERE a.action_id CONTAINS $component OR e.fingerprint CONTAINS $component
+        episodes = [{"action_id":r[0],"outcome":r[1],"cost_observed":r[2],
+                     "evidence_status":r[3],"created":r[4],"episode_id":r[5],
+                     "match_type":"exact", "memory_weight":1.0} for r in rows]
+        if semantic_key:
+            # A semantic graph pattern generalizes by role/kind rather than
+            # incident ID. Similarity is deliberately discounted, and each
+            # supporting action must still exist in the current action catalog.
+            related = g.ro_query("""MATCH (k:SemanticPattern {key:$key})-[:REMEMBERS]->(e:Episode)-[:OBSERVED]->(a:ActionExperience)
 RETURN a.action_id, a.outcome, a.cost_observed, a.evidence_status, e.created, e.id
-ORDER BY e.created DESC LIMIT 30""", {"component":component}).result_set
-        return [{"action_id":r[0],"outcome":r[1],"cost_observed":r[2],
-                 "evidence_status":r[3],"created":r[4],"episode_id":r[5]} for r in rows]
+ORDER BY e.created DESC LIMIT 20""", {"key":semantic_key}).result_set
+            seen = {ep["episode_id"] for ep in episodes}
+            episodes += [{"action_id":r[0],"outcome":r[1],"cost_observed":r[2],
+                          "evidence_status":r[3],"created":r[4],"episode_id":r[5],
+                          "match_type":"semantic", "memory_weight":0.25}
+                         for r in related if r[5] not in seen]
+        return episodes
 
     def new_session(self, tenant, fingerprint):
         _, g = self.graphs(tenant)
@@ -99,20 +126,40 @@ ORDER BY e.created DESC LIMIT 30""", {"component":component}).result_set
     def set_session_scene(self, tenant, session, scene):
         _, g = self.graphs(tenant)
         g.query("""MATCH (s:Session {id:$session})
-SET s.source=$source, s.vulnerable=$vulnerable, s.target=$target, s.scenario=$scenario""",
+SET s.source=$source, s.vulnerable=$vulnerable, s.target=$target, s.scenario=$scenario,
+ s.semantic_key=$semantic_key""",
                 {"session":session, "source":scene["source"], "vulnerable":scene["vulnerable"],
-                 "target":scene["target"], "scenario":scene["scenario"]})
+                 "target":scene["target"], "scenario":scene["scenario"],
+                 "semantic_key":scene.get("semantic_key","")})
 
     def session_scene(self, tenant, session):
         _, g = self.graphs(tenant)
         rows = g.ro_query("""MATCH (s:Session {id:$session})
-RETURN s.source, s.vulnerable, s.target, s.fingerprint, s.scenario""",
+RETURN s.source, s.vulnerable, s.target, s.fingerprint, s.scenario, s.semantic_key""",
                           {"session":session}).result_set
         if len(rows) != 1 or any(value is None for value in rows[0][:4]):
             raise ValueError("Unknown session or missing graph-bound incident context")
         row = rows[0]
         return {"source":row[0], "vulnerable":row[1], "target":row[2],
-                "fingerprint":row[3], "scenario":row[4] or "Graph incident"}
+                "fingerprint":row[3], "scenario":row[4] or "Graph incident",
+                "semantic_key":row[5] if len(row)>5 else None}
+
+    def log_turn(self, tenant, session, role, content):
+        """Append graph-backed conversation history; never keep chat as app state."""
+        if role not in {"operator", "assistant", "system"}:
+            raise ValueError("Invalid conversation role")
+        _, graph = self.graphs(tenant)
+        graph.query("""MATCH (s:Session {id:$session})
+CREATE (s)-[:HAS_TURN]->(:ConversationTurn {id:$id, role:$role, text:$text, created:$created})""",
+                    {"session":session,"id":str(uuid.uuid4()),"role":role,
+                     "text":str(content)[:1200],"created":iso_now()})
+
+    def conversation(self, tenant, session):
+        _, graph = self.graphs(tenant)
+        rows = graph.ro_query("""MATCH (s:Session {id:$session})-[:HAS_TURN]->(t:ConversationTurn)
+RETURN t.role, t.text, t.created ORDER BY t.created""",
+                               {"session":session}).result_set
+        return [{"role":r[0], "text":r[1], "created":r[2]} for r in rows]
 
     def handoff(self, tenant, session, agent, status, payload):
         _, g = self.graphs(tenant)
@@ -142,7 +189,7 @@ RETURN p.id""", {"session":session}).result_set
 RETURN h.agent, h.status, h.payload, h.created ORDER BY h.created""", {"session":session}).result_set
         return [{"agent":r[0],"status":r[1],"payload":json.loads(r[2]),"created":r[3]} for r in rows]
 
-    def record_outcome(self, tenant, session, fingerprint, action_id, outcome, cost, note):
+    def record_outcome(self, tenant, session, fingerprint, action_id, outcome, cost, note, semantic_key=None):
         _, g = self.graphs(tenant)
         # An outcome has a stable key per session+action; repeated POSTs cannot
         # fabricate dozens of separate failures by retrying the same report.
@@ -176,6 +223,11 @@ MERGE (pattern)-[:HAS_PROCEDURE]->(procedure)
 MERGE (procedure)-[:SUPPORTED_BY]->(a)""",
                 {"episode":episode,"fingerprint":fingerprint,
                  "procedure_key":fingerprint+":"+action_id,"action_id":action_id})
+        if semantic_key:
+            g.query("""MATCH (e:Episode {id:$episode})
+MERGE (pattern:SemanticPattern {key:$semantic_key})
+MERGE (pattern)-[:REMEMBERS]->(e)""",
+                    {"episode":episode, "semantic_key":semantic_key})
         verified = g.ro_query("""MATCH (s:Session {id:$session, fingerprint:$fingerprint})
 -[:RESULTED_IN]->(e:Episode {id:$episode})-[:OBSERVED]->(a:ActionExperience)
 RETURN a.action_id, a.outcome, a.cost_observed""",
@@ -224,3 +276,8 @@ CREATE (a)-[:{typ} {{edge_id:$edge_id, evidence:$evidence}}]->(b)""",
         for a in data["actions"]:
             topology.query("""CREATE (:Intervention {id:$id, label:$label,
 blocked_nodes:$blocked_nodes, blocked_edges:$blocked_edges, cost:$cost, note:$note})""", a)
+        topology.query("""CREATE (:GraphMetadata {
+source:$source, vulnerable:$vulnerable, target:$target,
+fingerprint:$fingerprint, scenario:$scenario})""",
+            {"source":data["source"],"vulnerable":data["vulnerable"],"target":data["target"],
+             "fingerprint":data["fingerprint"],"scenario":data["scenario"]})
