@@ -2,7 +2,7 @@
    Tokens: Sub-chromatic engineered glass, deep graphite, soft radial gradients,
    1px hairline rims, 70% horizon line, 7px/14px radius, 1.00s signature ease. */
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
   color-scheme: dark;
@@ -88,26 +88,167 @@
   --radius-pill: 999px;
   --ease-signature: cubic-bezier(0.15, 0.83, 0.66, 1);
   --duration-signature: 1000ms;
+
+  /* === 3.1 TYPOGRAPHY FONT FAMILIES === */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Geist Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
-* {
+/* === GLOBAL RESET & HIGH-DENSITY NATIVE APP PRECISION === */
+*, *::before, *::after {
   box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   margin: 0;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 13.5px;
-  line-height: 1.55;
-  background-color: var(--void);
-  background-image:
-    radial-gradient(ellipse 90% 60% at 50% -10%, #172433 0%, transparent 70%),
-    radial-gradient(ellipse 80% 40% at 50% 100%, #0d151f 0%, transparent 80%),
-    linear-gradient(180deg, var(--void) 0%, var(--graphite) 100%);
-  background-attachment: fixed;
-  color: var(--foreground);
-  min-height: 100vh;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-feature-settings: "cv01", "cv02", "cv03", "cv04", "ss01", "ss03";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+}
+
+/* === MONOSPACE STACK & TABULAR NUMERAL ENFORCEMENT === */
+code, pre, kbd, samp, .font-mono, [data-mono], .mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "liga" 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums, [data-tabular] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* === METALLIC GRADIENT HEADINGS (Section 3.3) === */
+.linear-gradient-heading {
+  background: linear-gradient(180deg, #FFFFFF 0%, rgba(255, 255, 255, 0.68) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* === EXACT TYPE SCALE & MICRO-HIERARCHY (Section 3.2) === */
+.text-display {
+  font-family: var(--font-sans);
+  font-size: 40px;
+  font-weight: 500;
+  line-height: 1.10;
+  letter-spacing: -0.035em;
+}
+
+.text-header {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.30;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.text-panel-title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.40;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.text-body-primary {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+  color: var(--text-primary);
+}
+
+.text-body-secondary {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.50;
+  letter-spacing: 0em;
+  color: var(--text-secondary);
+}
+
+.text-group-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.20;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.text-tag-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--text-secondary);
+}
+
+.text-micro-telemetry {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.20;
+  letter-spacing: 0em;
+  color: var(--text-muted);
+}
+
+/* === LINEAR CARD WITH INTERACTIVE CURSOR BORDER SPOTLIGHT (Section 6.2) === */
+.linear-card {
+  position: relative;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+  transition: border-color 140ms ease, background-color 140ms ease;
+  overflow: hidden;
+}
+
+.linear-card:hover {
+  border-color: var(--border-hover);
+}
+
+.linear-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(
+    400px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(255, 255, 255, 0.12),
+    transparent 40%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.linear-card:hover::before {
+  opacity: 1;
 }
 
 /* Lumen Edge Engineered Glass Window Wrapper */
