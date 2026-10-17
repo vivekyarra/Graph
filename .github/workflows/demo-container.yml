@@ -1,0 +1,49 @@
+name: Standalone demo FalkorDB smoke test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  bundled-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build real-graph demo image
+        run: docker build -f Dockerfile.demo -t maelin-hack-demo .
+      - name: Start isolated graph+API
+        run: docker run -d --name maelin-hack-demo --cpus=2 --memory=768m -p 127.0.0.1:8001:8000 -e MAELIN_OPERATOR_TOKEN=ci-only-operator-token maelin-hack-demo
+      - name: Assert live graph and authorized investigation
+        run: |
+          python - <<'PY'
+          import json, time, urllib.request, urllib.error
+          root="http://127.0.0.1:8001"
+          for attempt in range(90):
+              try:
+                  health=json.load(urllib.request.urlopen(root+"/api/health"))
+                  if health.get("seeded"): break
+              except Exception: pass
+              time.sleep(2)
+          else: raise AssertionError("Bundled FalkorDB never seeded")
+          try:
+              urllib.request.urlopen(urllib.request.Request(root+"/api/graph"))
+              raise AssertionError("Remote graph disclosure was not protected")
+          except urllib.error.HTTPError as exc:
+              assert exc.code==403, exc.code
+          request=urllib.request.Request(root+"/api/investigate",
+              data=json.dumps({"tenant":"alpha"}).encode(),
+              headers={"Content-Type":"application/json",
+                       "x-maelin-operator-token":"ci-only-operator-token"})
+          with urllib.request.urlopen(request,timeout=65) as response:
+              result=json.load(response)
+          assert len(result["paths"])==2, result
+          assert len(result["handoffs"])>=7, result.get("handoffs")
+          assert any(x["agent"]=="mcp" for x in result["handoffs"])
+          print("PASS: bundled live FalkorDB + true MCP trace + authenticated API")
+          PY
+      - name: Diagnostics
+        if: failure()
+        run: docker logs maelin-hack-demo
+      - name: Stop disposable demo
+        if: always()
+        run: docker rm -f maelin-hack-demo || true
