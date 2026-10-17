@@ -6,6 +6,61 @@
 
 :root {
   color-scheme: dark;
+
+  /* === LINEAR OBSIDIAN BACKGROUND & SURFACE ELEVATION HIERARCHY === */
+  --bg-canvas: #08090A;
+  --bg-sidebar: #0B0C0E;
+  --bg-surface-1: #0F1012;
+  --bg-surface-2: #141517;
+  --bg-surface-3: #1C1D21;
+  --bg-surface-active: #23252A;
+  --bg-glass: rgba(15, 16, 18, 0.76);
+  --bg-glass-heavy: rgba(20, 21, 23, 0.88);
+
+  /* === HAIRLINE BORDER & DIVIDER TOKENS === */
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.14);
+  --border-focus: rgba(94, 106, 210, 0.65);
+  --specular-top: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+
+  /* === TYPOGRAPHY & ICON COLOR HIERARCHY === */
+  --text-primary: #F7F8F8;
+  --text-secondary: #8A8F98;
+  --text-muted: #575B62;
+  --text-code: #E2E8F0;
+
+  /* === BRAND & AGENT SEMANTIC ACCENTS === */
+  --accent-indigo: #5E6AD2;
+  --accent-indigo-hover: #6E7AE2;
+  --accent-indigo-glow: rgba(94, 106, 210, 0.18);
+  --accent-blue: #4EA7FC;
+  --accent-cyan: #26B5CE;
+  --accent-violet: #A855F7;
+  --accent-emerald: #10B981;
+  --accent-amber: #F59E0B;
+  --accent-crimson: #EF4444;
+
+  /* === SEMANTIC BADGE TINTS (12% Fill + 25% Border) === */
+  --badge-indigo-bg: rgba(94, 106, 210, 0.12);
+  --badge-indigo-border: rgba(94, 106, 210, 0.28);
+  --badge-cyan-bg: rgba(38, 181, 206, 0.12);
+  --badge-cyan-border: rgba(38, 181, 206, 0.28);
+  --badge-violet-bg: rgba(168, 85, 247, 0.12);
+  --badge-violet-border: rgba(168, 85, 247, 0.28);
+  --badge-emerald-bg: rgba(16, 185, 129, 0.12);
+  --badge-emerald-border: rgba(16, 185, 129, 0.28);
+  --badge-amber-bg: rgba(245, 158, 11, 0.12);
+  --badge-amber-border: rgba(245, 158, 11, 0.28);
+  --badge-crimson-bg: rgba(239, 68, 68, 0.12);
+  --badge-crimson-border: rgba(239, 68, 68, 0.28);
+
+  /* === ELEVATION SHADOW TOKENS === */
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  --glow-hero: radial-gradient(ellipse 60% 40% at 50% -10%, rgba(94, 106, 210, 0.16), transparent 70%);
+
+  /* === LEGACY TOKEN ALIASES (preserve backward compatibility) === */
   --void: #07080a;
   --graphite: #0c0e12;
   --panel: #11141b;
@@ -18,8 +73,6 @@
   --foreground: #f2f5f9;
   --lumen: #ffffff;
   --lumen-glow: rgba(255, 255, 255, 0.75);
-
-  /* Semantic Accents (Sub-chromatic / Low-noise) */
   --teal: #5ce1b3;
   --teal-dim: rgba(92, 225, 179, 0.15);
   --red: #f46b7a;
@@ -100,9 +153,21 @@ body {
   display: inline-block;
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), 0 1px 2px rgba(0, 0, 0, 0.4);
 }
-.traffic-dot.red { background: #ff5f56; border: 1px solid #e0443e; }
-.traffic-dot.amber { background: #ffbd2e; border: 1px solid #dea123; }
-.traffic-dot.green { background: #27c93f; border: 1px solid #1aab29; }
+
+.traffic-dot.red {
+  background: #ff5f56;
+  border: 1px solid #e0443e;
+}
+
+.traffic-dot.amber {
+  background: #ffbd2e;
+  border: 1px solid #dea123;
+}
+
+.traffic-dot.green {
+  background: #27c93f;
+  border: 1px solid #1aab29;
+}
 
 .titlebar-center {
   display: flex;
@@ -208,10 +273,12 @@ body {
   box-shadow: 0 0 8px var(--amber);
   transition: background var(--duration-signature) var(--ease-signature);
 }
+
 .led.ok {
   background: var(--teal);
   box-shadow: 0 0 10px var(--teal);
 }
+
 .led.bad {
   background: var(--red);
   box-shadow: 0 0 10px var(--red);
@@ -240,7 +307,10 @@ body {
 }
 
 /* Buttons, Selects & Inputs (Lumen Edge Spec: 7px radius, hairline rim, radial bottom surface) */
-button, select, input, textarea {
+button,
+select,
+input,
+textarea {
   font: inherit;
 }
 
@@ -325,7 +395,8 @@ button.warn:hover {
   box-shadow: 0 4px 14px rgba(244, 107, 122, 0.35);
 }
 
-select, input {
+select,
+input {
   color: var(--foreground);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%), var(--graphite);
   border: 1px solid var(--hairline);
@@ -336,11 +407,13 @@ select, input {
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
-select:hover, input:hover {
+select:hover,
+input:hover {
   border-color: var(--hairline-bright);
 }
 
-select:focus, input:focus {
+select:focus,
+input:focus {
   outline: none;
   border-color: var(--lumen);
   box-shadow: 0 0 0 1px var(--lumen), 0 0 12px rgba(255, 255, 255, 0.25);
@@ -629,6 +702,7 @@ select:focus, input:focus {
   touch-action: none;
   cursor: grab;
 }
+
 .map.grabbing {
   cursor: grabbing;
 }
@@ -739,6 +813,7 @@ select:focus, input:focus {
   from {
     stroke-dashoffset: 126;
   }
+
   to {
     stroke-dashoffset: 0;
   }
@@ -792,9 +867,17 @@ select:focus, input:focus {
   font-weight: 500;
 }
 
-.red { color: var(--red); }
-.green { color: var(--teal); }
-.amber { color: var(--amber); }
+.red {
+  color: var(--red);
+}
+
+.green {
+  color: var(--teal);
+}
+
+.amber {
+  color: var(--amber);
+}
 
 /* Futures Comparison (Future A vs Future B Horizon Panels) */
 .futures {
@@ -830,8 +913,13 @@ select:focus, input:focus {
   line-height: 1.1;
 }
 
-.future strong.hot { color: var(--red); }
-.future strong.cool { color: var(--teal); }
+.future strong.hot {
+  color: var(--red);
+}
+
+.future strong.cool {
+  color: var(--teal);
+}
 
 .future small {
   display: block;
@@ -1043,30 +1131,39 @@ footer {
 
 /* Responsive adjustments */
 @media (max-width: 960px) {
-  .grid, .bottom {
+
+  .grid,
+  .bottom {
     grid-template-columns: 1fr;
   }
+
   .intro {
     align-items: flex-start;
     flex-direction: column;
   }
+
   .wrap {
     padding: 16px;
   }
+
   .window-frame {
     margin: 8px auto;
     border-radius: 0;
     border: none;
   }
+
   .top {
     flex-wrap: wrap;
   }
+
   .stats {
     gap: 8px;
   }
+
   .stat strong {
     font-size: 20px;
   }
+
   .map {
     height: 380px;
   }
