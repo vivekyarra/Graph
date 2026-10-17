@@ -1,82 +1,76 @@
-# Maelin Automatic Deployment & Persistent Architecture
+# Maelin Vercel Deployment & Persistent Architecture
 
-Production demo URL: https://maelin-graph-hacks-demo.onrender.com  
-Render service: https://dashboard.render.com/web/srv-db9imegm7kps73dhnkj0  
+Vercel Team / Project: https://vercel.com/golden-state-warriors  
 Repository: https://github.com/vivekyarra/Graph  
 Production branch: `main`  
-Demo Docker build: `Dockerfile.demo`  
-Production Docker build: `Dockerfile` (requires persistent FalkorDB)
+Vercel Serverless Entrypoint: `api/index.py`  
+Vercel Configuration: `vercel.json`  
 
 ---
 
-## 1. Ephemeral Container Limitation vs. Persistent Memory
+## 1. Vercel Serverless Architecture & FalkorDB Connection
 
-### The Current Ephemeral Demo Architecture
-In the standalone hackathon demo (`Dockerfile.demo`), both FalkorDB and the FastAPI application run together inside a single Render web service container. This enables a frictionless, zero-setup public demo where judges can test the full graph engine immediately without configuring external cloud credentials.
+### Stateless Serverless Functions vs. Persistent Graph Storage
+Vercel runs applications as stateless serverless functions that spin up on demand, handle requests, and scale down to zero. 
 
-However, **Render's container filesystem is ephemeral**:
-- Whenever Render auto-deploys a new commit, restarts an idle container, or spins up a fresh instance, the local container filesystem is discarded and recreated.
-- On each container startup, `scripts/start-demo.sh` executes `python -m maelin.seed` to populate the default `alpha` and `beta` topologies.
-- **Consequence**: Any learned incident history (Track 02: `Episode -> ActionExperience` memory nodes), operator-reported unexpected outages, causal score adaptations, and uploaded custom tenant graphs are reset back to baseline.
-
-### Automated Code Delivery vs. State Persistence
-The automatic deployment pipeline (GitHub Actions CI + Render Auto-Deploy on `main`) automates **code delivery**:
-- Every push to `main` triggers automated verification across Python integration, live FalkorDB Cypher traversal, and Chromium browser tests.
-- When CI passes, Render automatically pulls the latest commit, builds the container image, and performs a zero-downtime rolling deployment.
-
-However, **automatic code deployment does not solve data persistence**. To ensure that Maelin's learned graph memory, incident handoffs, and operator feedback endure across code updates, FalkorDB must be decoupled from the application container and hosted on persistent infrastructure.
+Because **Vercel serverless functions cannot run an internal background Redis/FalkorDB daemon**:
+- The FastAPI application running on Vercel acts purely as a stateless compute layer.
+- All graph state, Cypher incident topology, agent handoff traces, and episodic memory (`Episode -> ActionExperience` nodes) reside in an external, persistent **FalkorDB** instance (e.g., [FalkorDB Cloud](https://app.falkordb.cloud) or a cloud VM with persistent SSD storage).
+- The Vercel function connects directly to FalkorDB over TLS using standard environment variables: `FALKOR_HOST`, `FALKOR_PORT`, `FALKOR_PASSWORD`, `FALKOR_SSL=1`.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ 1. Ephemeral Hackathon Container (Render Web Service · Current Demo)                  │
+│ VERCEL SERVERLESS DEPLOYMENT ARCHITECTURE                                              │
 │                                                                                        │
-│   git push main ──► GitHub Actions ──► Render Webhook Auto-Deploy                      │
+│   git push main ──► GitHub Actions CI ──► Vercel GitHub Integration (Auto-Deploy)      │
 │                                              │                                         │
-│                                              ▼ (Container Recycled)                    │
-│                                 ┌─────────────────────────┐                            │
-│                                 │ [FastAPI App Container] │                            │
-│                                 │   FalkorDB (Local /tmp) │ ◄── Reset on Redeploy!     │
-│                                 └─────────────────────────┘                            │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ 2. Decoupled Production Architecture (Persistent Graph Memory · Recommended)           │
-│                                                                                        │
-│   git push main ──► GitHub Actions ──► Render Webhook Auto-Deploy                      │
-│                                              │                                         │
-│                                              ▼ (Code Updated Seamlessly)               │
-│                                 ┌─────────────────────────┐                            │
-│                                 │ [FastAPI Decoupled App] │ (Dockerfile)               │
-│                                 └────────────┬────────────┘                            │
-│                                              │ TLS Connection (FALKOR_SSL=1)           │
-│                                              ▼                                         │
-│                                 ┌─────────────────────────┐                            │
-│                                 │  Persistent FalkorDB    │                            │
-│                                 │  (Cloud or SSD Volume)  │ ◄── Graph Memory Preserved!│
-│                                 └─────────────────────────┘                            │
+│                                              ▼ (Edge Routing via vercel.json)          │
+│                             ┌─────────────────────────────────┐                        │
+│                             │     Vercel Global Edge CDN      │                        │
+│                             └──────────────┬──────────────────┘                        │
+│                                            │                                           │
+│                  ┌─────────────────────────┴─────────────────────────┐                 │
+│                  ▼                                                   ▼                 │
+│     Static Assets (/assets/*)                             API & Cockpit UI (/ & /api/*)│
+│     Routed to static/*                                    Routed to api/index.py       │
+│     (cockpit.css, cockpit.js)                             (FastAPI Serverless App)     │
+│                                                                      │                 │
+│                                              TLS Connection (FALKOR_SSL=1)             │
+│                                                                      ▼                 │
+│                                                   ┌─────────────────────────────────┐  │
+│                                                   │  Persistent FalkorDB Instance   │  │
+│                                                   │  (FalkorDB Cloud / SSD Storage) │  │
+│                                                   │  Graph Topology & Memory Stored │  │
+│                                                   └─────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Routing Architecture (`vercel.json`)
+The application uses `vercel.json` to route traffic cleanly:
+- **Static Assets**: Requests matching `/assets/(.*)` are served directly from `static/$1` by Vercel's global CDN (providing ultra-low latency for `cockpit.css` and `cockpit.js`).
+- **Serverless API**: Requests matching `/api/(.*)` route directly to the serverless function `api/index.py` (which exposes `app = api`).
+- **Cockpit UI Root**: Requests to `/` route to `api/index.py`, which serves `static/index.html`.
 
 ---
 
-## 2. Setting Up Persistent FalkorDB Hosting
+## 2. Setting Up Hosted FalkorDB
 
-To transition from the ephemeral demo container to durable production memory, configure an external persistent FalkorDB instance and switch the Render deployment to the decoupled `Dockerfile`.
+To provide persistent storage for the Vercel deployment:
 
 ### Option A: FalkorDB Cloud (Recommended Managed Hosting)
 1. **Create an Instance**:
    - Register at [FalkorDB Cloud](https://app.falkordb.cloud).
-   - Create a database cluster in the region closest to your Render service (e.g., Singapore `sin`, Oregon `ore`, or Frankfurt `fra`).
-   - Select your desired sizing and enable persistent SSD storage and automated snapshots.
+   - Create a database cluster in your preferred region.
+   - FalkorDB Cloud provides free and paid managed clusters with persistent SSD storage, automatic backups, and built-in TLS.
 2. **Collect Connection Details**:
-   - Hostname (e.g., `db-cluster-xyz.falkordb.cloud`)
-   - Port (e.g., `6379` or custom SSL port)
-   - Password / Auth token
-   - Username (default: `default`)
-   - Enable SSL (`FALKOR_SSL=1`)
+   - Hostname: `FALKOR_HOST` (e.g., `db-cluster-xyz.falkordb.cloud`)
+   - Port: `FALKOR_PORT` (e.g., `6379`)
+   - Password: `FALKOR_PASSWORD`
+   - Username: `FALKOR_USERNAME` (default: `default`)
+   - TLS: `FALKOR_SSL=1` (mandatory for FalkorDB Cloud TLS connections)
 
-### Option B: Self-Hosted FalkorDB with Persistent Volumes
-Run FalkorDB on persistent infrastructure (e.g., AWS EC2, GCP Compute Engine, DigitalOcean Droplet, or a Render Private Service with a Persistent Disk):
+### Option B: Self-Hosted FalkorDB on a Persistent Cloud VM
+Run FalkorDB with persistent volume storage (AWS EC2, GCP Compute Engine, DigitalOcean, etc.):
 
 ```bash
 docker run -d \
@@ -90,64 +84,75 @@ docker run -d \
   --requirepass "YOUR_STRONG_DATABASE_PASSWORD"
 ```
 
-The `--save 60 1` and `--appendonly yes` directives ensure point-in-time snapshots (RDB) and append-only logging (AOF) are continuously flushed to persistent storage.
+The `--save 60 1` and `--appendonly yes` directives ensure point-in-time snapshots (RDB) and append-only logging (AOF) are continuously flushed to persistent disk storage.
 
 ---
 
-## 3. Configuring Render for Persistent Hosting
+## 3. Step-by-Step Vercel Deployment Guide
 
-Once your persistent FalkorDB instance is provisioned:
+Deploying the repository to Vercel under your account (`https://vercel.com/golden-state-warriors`):
 
-1. **Update Render Build Configuration**:
-   - In Render Dashboard > Service Settings, set **Dockerfile Path** to `./Dockerfile` (or deploy via `render.yaml` which uses `./Dockerfile` by default).
-   - Unlike `Dockerfile.demo`, `Dockerfile` is a lightweight Python container that does not run an internal Redis/FalkorDB server and instead connects to external hosting.
+### 1. Import Project in Vercel
+1. Navigate to the Vercel dashboard: [https://vercel.com/golden-state-warriors](https://vercel.com/golden-state-warriors).
+2. Click **Add New...** > **Project**.
+3. Under **Import Git Repository**, connect your GitHub account and select repository `https://github.com/vivekyarra/Graph`.
+4. Leave the **Framework Preset** as default (**Other**).
+5. Ensure the **Root Directory** is set to `./`.
 
-2. **Configure Environment Variables in Render**:
-   In Render > Service > **Environment**:
+### 2. Configure Environment Variables in Vercel
+In the project configuration screen (or under **Settings** > **Environment Variables**), add the following:
 
-   | Variable | Value / Description | Sensitive |
-   |---|---|---|
-   | `FALKOR_HOST` | Remote FalkorDB endpoint (e.g., `db.falkordb.cloud` or private IP) | No |
-   | `FALKOR_PORT` | Port (e.g., `6379`) | No |
-   | `FALKOR_PASSWORD` | Strong database password / auth token | **Yes** |
-   | `FALKOR_USERNAME` | Database username (default: `default`) | No |
-   | `FALKOR_SSL` | `1` (mandatory for FalkorDB Cloud TLS connections) | No |
-   | `MAELIN_OPERATOR_TOKEN` | Cryptographically random secret for authenticated graph mutations | **Yes** |
-   | `MAELIN_AGENT_TOOLS` | `mcp` (activates stdio FastMCP agent tools) | No |
-   | `MAELIN_ENABLE_DEMO_MUTATIONS` | `1` to allow demo operators to test simulations/drift, or `0` for production lock | No |
-   | `OPENAI_API_KEY` | (Optional) API key for optional LLM reasoning mode | **Yes** |
-   | `MAELIN_LLM_MODEL` | `gpt-4o-mini` (or your preferred OpenAI/Ollama model) | No |
+| Variable | Value / Description | Sensitive |
+|---|---|---|
+| `FALKOR_HOST` | Remote FalkorDB endpoint (e.g., `db-xxx.falkordb.cloud` or cloud IP) | No |
+| `FALKOR_PORT` | Port (e.g., `6379`) | No |
+| `FALKOR_PASSWORD` | Database password / auth token | **Yes** |
+| `FALKOR_USERNAME` | Database username (default: `default`) | No |
+| `FALKOR_SSL` | `1` (enables TLS encryption for FalkorDB connections) | No |
+| `MAELIN_OPERATOR_TOKEN` | Cryptographically random secret for authenticated graph mutations and topology inspection | **Yes** |
+| `MAELIN_AGENT_TOOLS` | `mcp` (activates stdio FastMCP agent tools) | No |
+| `MAELIN_ENABLE_DEMO_MUTATIONS` | `1` to allow demo operators to test simulations/drift, or `0` for production lock | No |
+| `OPENAI_API_KEY` | (Optional) API key for optional LLM reasoning mode | **Yes** |
+| `MAELIN_LLM_MODEL` | `gpt-4o-mini` (or your preferred OpenAI model) | No |
 
-3. **One-Time Seed for Remote Persistent Graph**:
-   Run the seeding script against your remote FalkorDB instance from your workstation or a CI pipeline task:
+### 3. Deploy
+1. Click **Deploy**.
+2. Vercel automatically detects `requirements.txt`, provisions the Python serverless environment, packages `api/index.py`, and maps routes according to `vercel.json`.
+3. Your deployment will receive a live URL (e.g., `https://graph-golden-state-warriors.vercel.app`).
 
-   ```bash
-   export FALKOR_HOST="your-remote-host"
-   export FALKOR_PORT="6379"
-   export FALKOR_PASSWORD="your-secure-password"
-   export FALKOR_SSL="1"
+### 4. One-Time Seed for Remote Persistent Graph
+Seed the initial tenant topologies (`alpha` and `beta`) into your remote FalkorDB database. Run this command once from your local development workstation or CI pipeline:
 
-   python -m maelin.seed --tenant alpha
-   python -m maelin.seed --tenant beta
-   ```
+```bash
+export FALKOR_HOST="your-remote-falkordb-host"
+export FALKOR_PORT="6379"
+export FALKOR_PASSWORD="your-secure-password"
+export FALKOR_SSL="1"
 
-4. **Verify Deployment Health**:
-   - After Render finishes deploying `Dockerfile`, check the health endpoint:
-     ```bash
-     curl -s https://maelin-graph-hacks-demo.onrender.com/api/health?tenant=alpha
-     # Returns: {"graph_required":true,"seeded":true,"tenant":"alpha"}
-     ```
-   - Future git pushes to `main` will automatically build and deploy new application code without touching the remote FalkorDB data.
-   - Operator reports (`/api/outcome`), causal ablation memory, and custom tenant uploads will now persist indefinitely.
+python -m maelin.seed --tenant alpha
+python -m maelin.seed --tenant beta
+```
+
+### 5. Verify Deployment Health
+Check the health endpoint on your live Vercel deployment:
+
+```bash
+curl -s "https://<your-vercel-domain>.vercel.app/api/health?tenant=alpha"
+# Expected response: {"graph_required":true,"seeded":true,"tenant":"alpha"}
+```
+
+Verify operator access and the interactive cockpit:
+- Open `https://<your-vercel-domain>.vercel.app/` in your browser.
+- The 3D graph cockpit will render immediately, reading directly from your hosted FalkorDB instance.
 
 ---
 
 ## 4. Release Automation Workflow
 
 1. **GitHub Actions Validation**:
-   - `falkordb-integration.yml`: Runs unit tests, invariant checks, live FalkorDB Cypher queries, and headless Chromium browser tests.
-   - `demo-container.yml`: Builds and tests the standalone container smoke test.
-2. **Auto-Deploy on Render**:
-   - Service is connected directly to the GitHub repository `vivekyarra/Graph`.
-   - Set **Auto-Deploy: After CI Checks Pass** in Render Settings to ensure only verified commits reach production.
-   - Zero duplicate webhooks or manual redeploy triggers needed.
+   - `falkordb-integration.yml`: Runs full test suite, Cypher graph traversal checks, invariant assertions, and headless browser tests on every push and pull request.
+   - `demo-container.yml`: Smoke-tests standalone container builds.
+2. **Auto-Deploy on Vercel**:
+   - Vercel automatically watches `main` on `https://github.com/vivekyarra/Graph`.
+   - Every verified commit pushed to `main` triggers an automatic zero-downtime deployment on Vercel.
+   - Stateless functions update instantly without restarting or disrupting persistent FalkorDB data.

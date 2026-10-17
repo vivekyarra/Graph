@@ -14,15 +14,15 @@ Each Recon query uses FalkorDB Cypher to find paths from entry to target passing
 
 ### Track 01 — agents and MCP
 
-In Docker Compose and the standalone demo, Recon/Memory/Remediation use \`MAELIN_AGENT_TOOLS=mcp\`: typed stdio tool invocations, with recorded \`mcp / tool_called\` handoffs. With an OpenAI-compatible model configured, each specialist can select which read-only graph tool to query, and Remediation makes a separately checked function-tool selection among allowed interventions. The model cannot execute arbitrary Cypher or push actual infrastructure changes. If the model isn't configured, the UI says so.
+In Docker Compose and the standalone demo, Recon/Memory/Remediation use `MAELIN_AGENT_TOOLS=mcp`: typed stdio tool invocations, with recorded `mcp / tool_called` handoffs. With an OpenAI-compatible model configured, each specialist can select which read-only graph tool to query, and Remediation makes a separately checked function-tool selection among allowed interventions. The model cannot execute arbitrary Cypher or push actual infrastructure changes. If the model isn't configured, the UI says so.
 
 ### Track 02 — persistent graph context
 
-- \`Session\` → \`HAS_HANDOFF\` → \`Handoff\`: all graph-driven agent communications and MCP calls.
-- \`Session\` → \`HAS_TURN\` → \`ConversationTurn\`: operator goal/alert and assistant response.
-- \`IncidentPattern\` → \`HAS_EPISODE\` → \`Episode\` → \`OBSERVED\` → \`ActionExperience\`: sourced episodic memory.
-- \`IncidentPattern\` → \`HAS_PROCEDURE\` → \`Procedure\` → \`SUPPORTED_BY\` → \`ActionExperience\`: procedural review constraints.
-- \`SemanticPattern\` → \`REMEMBERS\` → \`Episode\`: bounded generalization by asset kind/role.
+- `Session` → `HAS_HANDOFF` → `Handoff`: all graph-driven agent communications and MCP calls.
+- `Session` → `HAS_TURN` → `ConversationTurn`: operator goal/alert and assistant response.
+- `IncidentPattern` → `HAS_EPISODE` → `Episode` → `OBSERVED` → `ActionExperience`: sourced episodic memory.
+- `IncidentPattern` → `HAS_PROCEDURE` → `Procedure` → `SUPPORTED_BY` → `ActionExperience`: procedural review constraints.
+- `SemanticPattern` → `REMEMBERS` → `Episode`: bounded generalization by asset kind/role.
 
 Compare the same current graph with and without memory to establish whether the decision change is explained by past operator reports. Show tenant Beta with no leaked Alpha memory. Graphs are scoped to tenants and outcomes to actual offered session actions.
 
@@ -31,14 +31,14 @@ Compare the same current graph with and without memory to establish whether the 
 GitHub Actions has three concrete evidence channels:
 
 1. **Python test + live FalkorDB workflow:** Cypher, graph copy, memory isolation, concurrent sessions, randomized oracle, Docker API and Chromium.
-2. **Judge replay harness:** \`python -m maelin.judge --output judge-proof.json\` proves cold → replay → memory → drift on disposable actual graphs.
-3. **Standalone demo image:** \`Dockerfile.demo\` starts the FalkorDB engine and API in one container and tests authenticated MCP calls.
+2. **Judge replay harness:** `python -m maelin.judge --output judge-proof.json` proves cold → replay → memory → drift on disposable actual graphs.
+3. **Standalone demo image:** `Dockerfile.demo` starts the FalkorDB engine and API in one container and tests authenticated MCP calls.
 
 Inspect the current Actions runs. CI passing validates the tested graph operations; it does *not* mean a model-provider account has been configured, nor does it replace a demo video.
 
 ## Compliance and honesty
 
-FalkorDB is the **primary and only runtime graph database**. The pure-Python traversal oracle is under \`tests/\` only. All demo topology and incidents are synthetic. No unauthorized real-world remediation or private user data are involved. The project's AI coding assistance is disclosed in README. A public deployed service is preferred but the hackathon also permits complete local setup instructions when deployment is impossible.
+FalkorDB is the **primary and only runtime graph database**. The pure-Python traversal oracle is under `tests/` only. All demo topology and incidents are synthetic. No unauthorized real-world remediation or private user data are involved. The project's AI coding assistance is disclosed in README. A public deployed service is preferred but the hackathon also permits complete local setup instructions when deployment is impossible.
 
 **Remaining human submission actions** (not claims of automated completion): participant confirms hackathon registration/team, verifies AI-model credential if presenting an LLM demonstration, records/hosts a real video, provides the final URL and submits before October 18, 2026 11:59 PM IST.
 
