@@ -5,3 +5,11 @@ __pycache__/
 .venv/
 .coverage
 *.log
+judge-proof.json
+browser_artifacts/
+test-results/
+playwright-report/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -41,3 +41,17 @@ Inspect the current Actions runs. CI passing validates the tested graph operatio
 FalkorDB is the **primary and only runtime graph database**. The pure-Python traversal oracle is under \`tests/\` only. All demo topology and incidents are synthetic. No unauthorized real-world remediation or private user data are involved. The project's AI coding assistance is disclosed in README. A public deployed service is preferred but the hackathon also permits complete local setup instructions when deployment is impossible.
 
 **Remaining human submission actions** (not claims of automated completion): participant confirms hackathon registration/team, verifies AI-model credential if presenting an LLM demonstration, records/hosts a real video, provides the final URL and submits before October 18, 2026 11:59 PM IST.
+
+## Judge Q&A
+
+**What happens when FalkorDB disappears?** Every query, memory operation and simulation fails closed. The frontend is not a pathfinder. The DFS oracle used by unit tests lives under `tests/`.
+
+**Are they really agents?** With credentials, separate Recon, Memory and Remediation specialists select restricted graph tools through a bounded LLM loop and persist reasoning/handoff context. Without model credentials, the same safety kernel is intentionally deterministic and labeled as such.
+
+**Is memory just a numerical penalty?** Decision ranking includes a cost-sensitive penalty, but its evidence is retrieved through real episodic, semantic-pattern and procedural FalkorDB subgraphs; live memory ablation shows the causal influence. Similar kinds get discounted evidence weights.
+
+**Can I change the graph?** Yes. Choose any valid source/pivot/target, or import a separate synthetic graph with new interventions into a fresh tenant using the JSON importer.
+
+**Can this change production systems?** No. The only mutations are synthetic topology injection, episode recording and disposable database clone simulation, behind an operator-authenticated boundary.
+
+**What's left after a green CI?** Record and upload a real presentation video; verify the chosen model provider is working; register and submit the project on WeMakeDevs. For a durable public service supply a hosted FalkorDB connection; the bundled web demo is ephemeral.

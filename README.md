@@ -2,7 +2,8 @@
 
 > **Graph Hacks Hackathon Submission** (WeMakeDevs × FalkorDB)  
 > **Tracks Entered:** Track 01 (Connected Data) & Track 02 (Agent Memory and Coordination)  
-> **Live Demo Cockpit:** [https://maelin-graph-hacks-demo.onrender.com](https://maelin-graph-hacks-demo.onrender.com)
+> **Live Demo Cockpit:** [https://maelin-graph-hacks-demo.onrender.com](https://maelin-graph-hacks-demo.onrender.com)  
+> **Judge Evidence Packet:** [docs/judge_packet.md](docs/judge_packet.md)
 
 ---
 
@@ -131,7 +132,7 @@ The automatic deployment pipeline (GitHub Actions CI + Render auto-deploy) provi
    FALKOR_HOST="remote-host" FALKOR_PORT="6379" FALKOR_PASSWORD="secret" FALKOR_SSL="1" python -m maelin.seed --tenant beta
    ```
 
-See [DEPLOYMENT_AUTOMATION.md](DEPLOYMENT_AUTOMATION.md) for the complete step-by-step persistent FalkorDB configuration and operational guide.
+See [docs/deployment.md](docs/deployment.md) for the complete step-by-step persistent FalkorDB configuration and operational guide.
 
 ---
 
@@ -167,7 +168,7 @@ ORDER BY e.created DESC LIMIT 30
 Maelin runs in deterministic policy mode by default. To enable model-powered analytical insight synthesis and function-calling plan adjudication:
 
 ```bash
-pip install -r requirements-agent.txt
+pip install -r requirements.txt
 
 # Set Gemini or OpenAI API key:
 export GEMINI_API_KEY="<your-gemini-key>"
@@ -196,6 +197,7 @@ python -m maelin.mcp_server
 pip install -r requirements-dev.txt
 python -m pytest -q
 ```
-* **47 offline and invariant tests pass in ~3 seconds.**
-* Includes an exhaustive property-based oracle checking 600 random graph configurations.
+* **62 offline and invariant tests pass in ~3 seconds.**
+* Includes an exhaustive property-based oracle checking 5,000 random graph configurations.
+* See [docs/judge_packet.md](docs/judge_packet.md) for live evaluation steps, FalkorDB Cypher verification, and judge Q&A.
 
