@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from maelin.agents import investigate
-from maelin.logic import analyze, traversal_fallback, MAX_CANDIDATE_ACTIONS
+from maelin.logic import analyze, MAX_CANDIDATE_ACTIONS
+from offline_graph import traversal_fixture
 from maelin.api import api
 from test_agents import FakeFalkorStore, SCENE
 
@@ -38,7 +39,7 @@ def test_memory_isolation_ablation_proves_no_cross_tenant_contamination():
 
 
 def test_badly_formed_and_enormous_action_catalogs_fail_closed():
-    paths,biz=traversal_fallback(SCENE)
+    paths,biz=traversal_fixture(SCENE)
     base=SCENE['actions'][0]
     with pytest.raises(ValueError,match='Duplicate'):
         analyze(paths,biz,[base,dict(base)])
@@ -55,7 +56,7 @@ def test_badly_formed_and_enormous_action_catalogs_fail_closed():
 
 
 def test_missing_threat_path_cannot_be_misrepresented_as_safety():
-    _,biz=traversal_fallback(SCENE)
+    _,biz=traversal_fixture(SCENE)
     analysis=analyze([],biz,SCENE['actions'])
     assert analysis['recommended'] is None
     assert analysis['reason']=='no_matching_threat_path'
@@ -98,7 +99,7 @@ def test_ui_exposes_memory_ablation_and_evidence_disclaimer():
 def test_operator_goal_is_respected_without_optional_llm(monkeypatch):
     from maelin.llm import adjudicate
     monkeypatch.delenv('OPENAI_API_KEY',raising=False)
-    paths, biz = traversal_fallback(SCENE)
+    paths, biz = traversal_fixture(SCENE)
     plans = analyze(paths,biz,SCENE['actions'])['plans']
     continuity = adjudicate(plans,'Minimize customer disruption and remediation cost')
     simplicity = adjudicate(plans,'Prefer the fewest independent changes while preserving customer service')

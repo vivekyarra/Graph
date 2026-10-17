@@ -7,6 +7,32 @@ import json
 import os
 
 
+def model_enabled():
+    return bool(os.getenv("OPENAI_API_KEY")) and os.getenv("MAELIN_USE_LLM", "auto").lower() not in {"0", "off", "false"}
+
+
+def narrate(role, evidence):
+    """Evidence-bound specialist interpretation, never graph writes or unsafe actions."""
+    if not model_enabled():
+        return None
+    try:
+        from openai import OpenAI
+        response = OpenAI(timeout=12.0).chat.completions.create(
+            model=os.getenv("MAELIN_LLM_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role":"system", "content": (
+                    "You are a specialist incident-response reasoning agent. Your role: " + role +
+                    ". Interpret only supplied SYNTHETIC graph evidence, acknowledge missing facts, "
+                    "and propose one verification question. Limit to 75 words. Never invent findings or perform changes.")},
+                {"role":"user", "content":json.dumps(evidence)}
+            ], temperature=0)
+        return str(response.choices[0].message.content or "")[:600]
+    except Exception as exc:
+        return "LLM unavailable (" + type(exc).__name__ + "); verified graph evidence remains authoritative."
+
+
+
+
 def adjudicate(plans, goal="minimize customer disruption"):
     if not plans:
         return {"mode":"no_safe_plan","selected_index":None,"explanation":"No fully covering candidate found."}
@@ -23,7 +49,7 @@ def adjudicate(plans, goal="minimize customer disruption"):
         "explanation":("Fewest changes within four score units of the minimum, without increasing modeled customer disruption."
                        if prefer_fewer else
                        "Lowest combined synthetic impact, execution cost and prior-failure penalty.")}
-    if not os.getenv("OPENAI_API_KEY") or os.getenv("MAELIN_USE_LLM")!="1":
+    if not model_enabled():
         return deterministic
     try:
         from openai import OpenAI

@@ -1,12 +1,13 @@
 import json
 from pathlib import Path
-from maelin.logic import analyze, traversal_fallback
+from maelin.logic import analyze
+from offline_graph import traversal_fixture
 
 DATA=json.loads((Path(__file__).parents[1]/'data'/'demo.json').read_text())
 
 
 def fixture():
-    paths, business=traversal_fallback(DATA)
+    paths, business=traversal_fixture(DATA)
     return paths,business,DATA['actions']
 
 
@@ -91,7 +92,7 @@ def test_topology_drift_invalidates_old_cut_and_forces_new_plan():
     scene['pivot_edges']+=[
         {'id':'p9','from':'auth-service','to':'shadow-role'},
         {'id':'p10','from':'shadow-role','to':'customer-db'}]
-    paths,biz=traversal_fallback(scene)
+    paths,biz=traversal_fixture(scene)
     assert len(paths)==3
     cold=analyze(paths,biz,scene['actions'])
     assert cold['recommended']['action_ids']==['invalidate-attacker-session']

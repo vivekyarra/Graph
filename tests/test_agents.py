@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from collections import defaultdict
 from maelin.agents import investigate
-from maelin.logic import traversal_fallback
+from offline_graph import traversal_fixture
 
 SCENE=json.loads((Path(__file__).parents[1]/'data'/'demo.json').read_text())
 
@@ -20,10 +20,10 @@ class FakeFalkorStore:
         return sid
     def attack_paths(self,t,s,v,d):
         self.seen_queries.append((t,'attack_paths'))
-        return traversal_fallback(SCENE)[0]
+        return traversal_fixture(SCENE)[0]
     def business_paths(self,t):
         self.seen_queries.append((t,'business_paths'))
-        return traversal_fallback(SCENE)[1]
+        return traversal_fixture(SCENE)[1]
     def interventions(self,t):
         self.seen_queries.append((t,'interventions'))
         return SCENE['actions']

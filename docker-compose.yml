@@ -12,6 +12,10 @@ services:
     environment:
       FALKOR_HOST: graph
       FALKOR_PORT: '6379'
+      MAELIN_AGENT_TOOLS: 'mcp' # real FastMCP stdio calls, persisted in session trace
+      MAELIN_USE_LLM: 'auto' # optional model calls if a key is supplied
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MAELIN_LLM_MODEL: ${MAELIN_LLM_MODEL:-gpt-4o-mini}
       MAELIN_ENABLE_DEMO_MUTATIONS: '1' # trusted LOCAL demo only
       MAELIN_LOCAL_DEMO: '1' # bypasses operator token only on localhost-bound Compose
     ports:
