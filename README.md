@@ -10,7 +10,7 @@
 
 **Simulate before you remediate.** Zero in-memory state, bounded Cypher provenance, provable min-cut isolation, and multi-tenant causal memory powered by native **FalkorDB** graph algorithms.
 
-[Live Interactive Cockpit](https://graph-golden-state-warriors.vercel.app) • [System Verification Guide](docs/evaluation_guide.md) • [Deployment Docs](docs/deployment.md) • [Contributing](CONTRIBUTING.md)
+[Live Interactive Cockpit](https://maelin-graph-hacks-demo.onrender.com) • [System Verification Guide](docs/evaluation_guide.md) • [Deployment Docs](docs/deployment.md) • [Contributing](CONTRIBUTING.md)
 
 ---
 
@@ -179,7 +179,7 @@ Keyboard: `⌘K` commands · `↵` investigate · `1`/`2`/`3` tabs · `/` ask th
 ### Deployment and security
 * Remote deployments set `MAELIN_OPERATOR_TOKEN`; all graph reads and writes require the `x-maelin-operator-token` header (constant-time compare, no well-known bypass tokens).
 * `MAELIN_PUBLIC_DEMO=1` allows tokenless access **only** to the synthetic `alpha`/`beta` tenants, for a hosted public demo. Uploads (new tenants) always need the token.
-* Vercel ([golden-state-warriors](https://vercel.com/golden-state-warriors)) + FalkorDB Cloud: see [docs/deployment.md](docs/deployment.md) (`FALKOR_HOST`, `FALKOR_PORT`, `FALKOR_PASSWORD`, `FALKOR_SSL=1`).
+* Render Deployment ([maelin-graph-hacks-demo](https://maelin-graph-hacks-demo.onrender.com)) + FalkorDB Cloud: see [docs/deployment.md](docs/deployment.md) (`FALKOR_HOST`, `FALKOR_PORT`, `FALKOR_PASSWORD`, `FALKOR_SSL=1`).
 * Optional LLM layer (`OPENAI_API_KEY` / `GEMINI_API_KEY` / Ollama via `MAELIN_LLM_BASE_URL`): models may only choose among graph-verified plans and read-only tools. They never write Cypher or execute actions.
 
 ---

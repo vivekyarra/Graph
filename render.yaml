@@ -1,0 +1,15 @@
+# Render blueprint configuration for standalone MAELIN demo service.
+services:
+  - type: web
+    name: maelin-graph-hacks-demo
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile.demo
+    envVars:
+      - key: MAELIN_PUBLIC_DEMO
+        value: "1"
+      - key: MAELIN_LOCAL_DEMO
+        value: "1"
+      - key: MAELIN_ENABLE_DEMO_MUTATIONS
+        value: "1"
