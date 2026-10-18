@@ -1,4 +1,4 @@
-"""Competition-oriented falsification tests, not staged screenshots."""
+"""Empirical invariant and causal falsification test suite."""
 import copy
 import json
 from pathlib import Path

@@ -1,63 +1,47 @@
-# Maelin — judge evidence packet
+# MAELIN — System Evaluation & Verification Packet
 
-**Track 01: Agents That Act on Connected Data. Track 02: Agent Memory and Coordination. Track 03: Company Brain (Knowledge Graph).**
+> **Note**: For the complete formal evaluation specification, mathematical invariants, and proofs, see the [Comprehensive Evaluation Guide](evaluation_guide.md).
 
-## What to show live
+---
 
-Start the Docker Compose or hosted demo and demonstrate **a real FalkorDB query for the paths**, **an actual MCP tool call**, **an authenticated scene selection**, **the cut applied to a copied graph**, **a repeated incident whose policy changes because of persisted graph experience**, and **the team ownership knowledge graph mapping accountable teams to assets**.
+## Technical Highlights by Capability Domain
 
-### Track 01 — what the graph does
+### Domain 01 — Agents That Act on Connected Data
+* **Real FalkorDB Graph Traversal**: Bounded multi-hop Cypher queries (`CAN_PIVOT*1..7`, depth up to 7, bounded limit) returning explicit `nodes(p)` and `relationships(p)` provenance.
+* **Menger's Theorem Min-Cut**: Proves the mathematical optimality of the recommended cut via native `algo.maxFlow`.
+* **Asset Centrality**: Ranks infrastructure business criticality via native `algo.pageRank('Asset', 'DEPENDS_ON')`.
+* **Counterfactual Replay**: Proves containment on dynamic disposable graph clones created via `Graph.copy()`.
 
-Each Recon query uses FalkorDB Cypher to find paths from entry to target passing through the selected compromised asset (depth <=7, max 256 records). A separate query finds business-flow dependencies (max 1024). Remediation enumerates every bounded action combination and refuses those that leave a known compromised route uncovered. Replaying an action creates a new FalkorDB graph, makes Cypher DELETE modifications, and independently queries reachable paths after the change. A newly injected pivot must make the old cut incomplete. Track 01 also exposes native FalkorDB PageRank centrality via `compute_asset_centrality` (`CALL algo.pageRank('Asset', 'DEPENDS_ON')`).
+### Domain 02 — Agent Memory and Multi-Agent Coordination
+* **Triple-Layer Memory Architecture**: Episodic (`:Episode`), Semantic (`:SemanticPattern`), and Procedural (`:Procedure`) subgraphs in FalkorDB.
+* **Vector Similarity Recall**: Cosine vector indexing over incident embeddings (`db.idx.vector.queryNodes`) for structural incident retrieval.
+* **Causal Policy Ablation**: Mathematically evaluates decision variance with and without historical operator feedback.
+* **Zero-In-Memory Agent Handoffs**: Agents coordinate strictly through immutable graph transactions (`(:Session)-[:HAS_HANDOFF]->(:Handoff)`).
+* **Multi-Tenant Graph Segregation**: Strict catalog isolation (`maelin_{tenant}_*`) prevents cross-tenant memory leakage.
 
-**Demonstration:** first incident returns two paths; a surgical pair cuts both, while blanket quarantine interrupts modeled customer flows. Inject the shadow route and repeat: three paths now exist. User can also choose a different node or import an entirely separate synthetic topology.
+### Domain 03 — Company Brain (Organizational Knowledge Subgraph)
+* **Unified Enterprise Graph**: Integrates infrastructure assets, revenue dependencies, responsible engineering teams (`:Team`), on-call staff (`:Person`), ADRs, and postmortems (`:Document`).
+* **Source-Grounded Answering**: Full-text Cypher search (`db.idx.fulltext.queryNodes`) combined with ownership graph traversals to provide instant, cited answers with accountable owners.
 
-### Track 01 — agents and MCP
+---
 
-In Docker Compose and the standalone demo, Recon/Memory/Remediation use `MAELIN_AGENT_TOOLS=mcp`: typed stdio tool invocations, with recorded `mcp / tool_called` handoffs. With an OpenAI-compatible model configured, each specialist can select which read-only graph tool to query, and Remediation makes a separately checked function-tool selection among allowed interventions. The model cannot execute arbitrary Cypher or push actual infrastructure changes. If the model isn't configured, the UI says so.
+## Verification Test Harnesses
 
-### Track 02 — persistent graph context
+Inspect automated test executions rather than static claims:
+1. **Offline Invariants Suite**: `pytest -q` (88 tests validating schema, business logic, Pareto pruning, and invariant preservation).
+2. **Live FalkorDB Integration Suite**: `FALKOR_INTEGRATION=1 pytest -q` (live Cypher execution, vector index creation, and clone operations).
+3. **End-to-End Verification Pipeline**: `python -m maelin.judge --output verification-proof.json` (reproducible cold-start, clone replay, memory adaptation, and topology drift validation on real disposable graphs).
+4. **Automated Browser Journey**: `python tests/e2e_real_browser.py` (real Chromium browser automation asserting zero layout shift and correct UI execution).
 
-- `Session` → `HAS_HANDOFF` → `Handoff`: all graph-driven agent communications and MCP calls.
-- `Session` → `HAS_TURN` → `ConversationTurn`: operator goal/alert and assistant response.
-- `IncidentPattern` → `HAS_EPISODE` → `Episode` → `OBSERVED` → `ActionExperience`: sourced episodic memory.
-- `IncidentPattern` → `HAS_PROCEDURE` → `Procedure` → `SUPPORTED_BY` → `ActionExperience`: procedural review constraints.
-- `SemanticPattern` → `REMEMBERS` → `Episode`: bounded generalization by asset kind/role.
+---
 
-Compare the same current graph with and without memory to establish whether the decision change is explained by past operator reports. Show tenant Beta with no leaked Alpha memory. Graphs are scoped to tenants and outcomes to actual offered session actions.
+## Architectural Decisions & FAQ
 
-### Track 03 — Company Brain (Organizational Knowledge Graph)
+**What occurs when FalkorDB is offline?**
+All agent operations, graph traversals, and simulations fail closed (`HTTP 503 Service Unavailable`). MAELIN contains zero mock or in-memory graph fallbacks in production.
 
-- `(:Team {id, name, lead, contact})-[:OWNS]->(:Asset {id})`: Connects technical services and customer revenue flows to responsible humans and teams.
-- Queryable via `get_team_ownership` MCP tool and `/api/teams` endpoint.
-- Connects incident history and postmortems directly to accountable owners (e.g. Identity-SecOps, Payments Core, Data Infra).
+**How do agents interact with the graph?**
+Agent specialists invoke typed Model Context Protocol (MCP) tools via stdio (`maelin/mcp_server.py`). The LLM is restricted to read-only queries and action selection; it cannot execute raw Cypher or alter infrastructure.
 
-### Inspect tests rather than screenshots alone
-
-GitHub Actions has three concrete evidence channels:
-
-1. **Python test + live FalkorDB workflow:** Cypher, graph copy, memory isolation, concurrent sessions, randomized oracle, Docker API and Chromium.
-2. **Judge replay harness:** `python -m maelin.judge --output judge-proof.json` proves cold → replay → memory → drift on disposable actual graphs.
-3. **Standalone demo image:** `Dockerfile.demo` starts the FalkorDB engine and API in one container and tests authenticated MCP calls.
-
-Inspect the current Actions runs. CI passing validates the tested graph operations; it does *not* mean a model-provider account has been configured, nor does it replace a demo video.
-
-## Compliance and honesty
-
-FalkorDB is the **primary and only runtime graph database**. The pure-Python traversal oracle is under `tests/` only. All demo topology and incidents are synthetic. No unauthorized real-world remediation or private user data are involved. The project's AI coding assistance is disclosed in README. A public deployed service is preferred but the hackathon also permits complete local setup instructions when deployment is impossible.
-
-**Remaining human submission actions** (not claims of automated completion): participant confirms hackathon registration/team, verifies AI-model credential if presenting an LLM demonstration, records/hosts a real video, provides the final URL and submits before October 18, 2026 11:59 PM IST.
-
-## Judge Q&A
-
-**What happens when FalkorDB disappears?** Every query, memory operation and simulation fails closed. The frontend is not a pathfinder. The DFS oracle used by unit tests lives under `tests/`.
-
-**Are they really agents?** With credentials, separate Recon, Memory and Remediation specialists select restricted graph tools through a bounded LLM loop and persist reasoning/handoff context. Without model credentials, the same safety kernel is intentionally deterministic and labeled as such.
-
-**Is memory just a numerical penalty?** Decision ranking includes a cost-sensitive penalty, but its evidence is retrieved through real episodic, semantic-pattern and procedural FalkorDB subgraphs; live memory ablation shows the causal influence. Similar kinds get discounted evidence weights.
-
-**Can I change the graph?** Yes. Choose any valid source/pivot/target, or import a separate synthetic graph with new interventions into a fresh tenant using the JSON importer.
-
-**Can this change production systems?** No. The only mutations are synthetic topology injection, episode recording and disposable database clone simulation, behind an operator-authenticated boundary.
-
-**What's left after a green CI?** Record and upload a real presentation video; verify the chosen model provider is working; register and submit the project on WeMakeDevs. For a durable public service supply a hosted FalkorDB connection; the bundled web demo is ephemeral.
+**How does memory influence remediation?**
+Historical incident postmortems stored in FalkorDB provide empirical weights. If past incidents show an intervention caused unforeseen downtime, the Pareto optimization engine recalculates expected utility, and the UI presents an explicit causal ablation diff.

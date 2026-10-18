@@ -1,4 +1,4 @@
-# Public hackathon demo: real FalkorDB+FastAPI, no non-graph engine.
+# Standalone evaluation container: real FalkorDB+FastAPI, no non-graph engine.
 # Instance-local data is ephemeral. For durable cloud persistence use Dockerfile.
 FROM falkordb/falkordb-server:v4.20.4
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip python3-venv ca-certificates \

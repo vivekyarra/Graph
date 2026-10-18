@@ -86,7 +86,7 @@ def require_operator(request: Request, tenant: str | None = None):
 
     * MAELIN_OPERATOR_TOKEN set: the header must match it (constant time).
     * MAELIN_PUBLIC_DEMO=1: tokenless access, but only to the synthetic demo
-      tenants, so a hosted judge demo can never touch other tenants.
+      tenants, so a hosted public demo can never touch other tenants.
     * MAELIN_LOCAL_DEMO=1: loopback-only Docker Compose, never the Internet.
     """
     configured = os.getenv("MAELIN_OPERATOR_TOKEN", "")

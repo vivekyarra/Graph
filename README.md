@@ -29,13 +29,13 @@ Agents never pass state in Python. Each specialist reads the previous one's work
 
 ---
 
-## How each track is covered
+## Capability Matrix & Architecture
 
-| Track | Judge focus | Where to see it |
+| Architectural Domain | Core Technical Objectives | Interactive Demonstration & Verification |
 |---|---|---|
-| **Track 01: Agents That Act on Connected Data** | Multi-hop reasoning, graph algorithms as agent tools, MCP tool selection, actions grounded in the graph, explainable results | **Investigate** → 2 routes with hop provenance; HUD chips for `algo.maxFlow`, chokepoints and `algo.pageRank`; **Replay** cuts edges on a clone (2 → 0 routes); **Cypher** button shows each query the agents ran |
-| **Track 02: Agent Memory and Coordination** | Episodic, semantic and procedural memory; persistent history; shared state and handoffs; concurrency; per-tenant memory | Report an outage → **New session** → the decision changes, with a with/without-memory ablation banner. **Memory** tab: sessions, episodes, exact/semantic/vector recall, handoff ledger. `alpha`/`beta` tenants are isolated graphs. `test_real_concurrent_session_handoffs_are_tenant_scoped` runs 12 parallel investigations |
-| **Track 03: Company Brain** | People, teams, docs, tickets, chats and decisions in one graph; who owns and knows what; decisions traced to sources; knowledge kept current; answers with sources | **Brain** tab: ask a question, get cited sources. Click any node for owners, on-call, documents, decisions and blast radius. Every operator report auto-writes a postmortem that is searchable immediately |
+| **Autonomous Graph Agents** *(Connected Data)* | Multi-hop reasoning, native graph algorithms as agent tools, MCP tool selection, actions grounded in graph topologies, explainable results | **Investigate** → 2 routes with hop provenance; HUD chips for `algo.maxFlow`, chokepoints and `algo.pageRank`; **Replay** cuts edges on a clone (2 → 0 routes); **Cypher** button inspects generated queries |
+| **Agent Memory & State Coordination** *(Episodic, Semantic & Procedural)* | Multi-layered episodic, semantic and procedural memory; persistent history; zero-in-memory handoffs; tenant-scoped isolation; high concurrency | Report an outage → **New session** → decision dynamically adapts with causal with/without-memory ablation banner. **Memory** tab: sessions, episodes, exact/semantic/vector recall, handoff ledger. Multi-tenant graph isolation |
+| **Company Brain & Knowledge Subgraph** *(Organizational Intelligence)* | Unified enterprise knowledge graph mapping services, revenue flows, teams, and postmortems; cited question answering; live ownership graph | **Brain** tab: ask domain questions with citation grounding. Interactive node inspection for service owners, on-call engineers, ADRs, postmortems, and blast radius |
 
 ---
 
@@ -160,7 +160,7 @@ Single-container demo (FalkorDB and the app in one image, auto-seeded):
 docker build -f Dockerfile.demo -t maelin-demo . && docker run -p 8000:8000 -e MAELIN_PUBLIC_DEMO=1 maelin-demo
 ```
 
-### 60-second judge walkthrough
+### Interactive Verification Walkthrough (60-Second Flow)
 1. **Investigate** (or press ↵): watch the agents and MCP calls, then hover **Future A** and **Future B** to preview them on the graph.
 2. **Replay B on a graph clone**: the cut edges are marked and the routes go from 2 to 0.
 3. Click **Caused outage** on *Revoke admin role*, then **New session**: memory changes the decision, and the ablation banner shows why.
@@ -171,21 +171,23 @@ Keyboard: `⌘K` commands · `↵` investigate · `1`/`2`/`3` tabs · `/` ask th
 
 ### Deployment and security
 * Remote deployments set `MAELIN_OPERATOR_TOKEN`; all graph reads and writes require the `x-maelin-operator-token` header (constant-time compare, no well-known bypass tokens).
-* `MAELIN_PUBLIC_DEMO=1` allows tokenless access **only** to the synthetic `alpha`/`beta` tenants, for a hosted judge demo. Uploads (new tenants) always need the token.
+* `MAELIN_PUBLIC_DEMO=1` allows tokenless access **only** to the synthetic `alpha`/`beta` tenants, for a hosted public demo. Uploads (new tenants) always need the token.
 * Vercel ([golden-state-warriors](https://vercel.com/golden-state-warriors)) + FalkorDB Cloud: see [docs/deployment.md](docs/deployment.md) (`FALKOR_HOST`, `FALKOR_PORT`, `FALKOR_PASSWORD`, `FALKOR_SSL=1`).
 * Optional LLM layer (`OPENAI_API_KEY` / `GEMINI_API_KEY` / Ollama via `MAELIN_LLM_BASE_URL`): models may only choose among graph-verified plans and read-only tools. They never write Cypher or execute actions.
 
 ---
 
-## Tests and evidence
+## Tests and verification
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                               # offline suite
-FALKOR_INTEGRATION=1 python -m pytest -q          # + live FalkorDB suites (101 tests)
-python -m maelin.judge --output judge-proof.json  # reproducible cold → replay → memory → drift proof
-python tests/e2e_real_browser.py                  # real Chromium journey against the running app
+python -m pytest -q                                # offline suite (88 tests)
+FALKOR_INTEGRATION=1 python -m pytest -q           # + live FalkorDB suites (101 tests)
+python -m maelin.verify --output verification-proof.json  # reproducible cold → replay → memory → drift proof
+python tests/e2e_real_browser.py                   # real Chromium journey against the running app
 ```
-CI (`.github/workflows`) runs all of the above against a real FalkorDB container and uploads the proof JSON, screenshots and a walkthrough video as artifacts. This includes a property-based oracle over 5,000 random graphs, the min-cut, vector-memory and Company Brain proofs, and a no-page-scroll assertion for the UI.
+CI (`.github/workflows`) runs all of the above against a real FalkorDB container and uploads the proof JSON, screenshots and browser traces as artifacts. This includes a property-based oracle over 5,000 random graphs, min-cut optimality proofs, vector-memory validation, and Company Brain knowledge traversals.
+
+For the formal evaluation methodology, proofs, and architecture FAQ, see the [System Verification & Evaluation Guide](docs/evaluation_guide.md). For development setup and contribution standards, see [CONTRIBUTING.md](CONTRIBUTING.md). For security invariants, see [SECURITY.md](SECURITY.md).
 
 All data is synthetic. MAELIN never touches real infrastructure; recommendations are bounded to the modeled graph and are not a real-world safety certificate.

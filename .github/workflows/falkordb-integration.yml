@@ -60,7 +60,7 @@ jobs:
           docker compose exec -T app python -m maelin.seed --tenant beta
       - name: Replay the complete UI journey against real API and FalkorDB
         run: python tests/e2e_real_browser.py
-      - name: Preserve real browser captures for judge review
+      - name: Preserve real browser captures for verification review
         if: always()
         uses: actions/upload-artifact@v4
         with:

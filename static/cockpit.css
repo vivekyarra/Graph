@@ -219,6 +219,14 @@ h2 { font-size: 16px; font-weight: 600; letter-spacing: -.02em; margin: 0; line-
 .pick select:hover { border-color: var(--line-2); }
 .pick.v select { border-color: rgba(255,107,91,.45); color: #ffd2cc; }
 .pick.t select { border-color: rgba(155,140,255,.45); color: #ddd8ff; }
+select option,
+.pick select option,
+.pick.v select option,
+.pick.t select option {
+  color: #0b0c10 !important;
+  background-color: #ffffff !important;
+  font-weight: 500;
+}
 
 .goal { display: flex; gap: 6px; margin-top: 12px; }
 .goal button { flex: 1; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line); background: transparent; color: var(--text-2); font-size: 12px; text-align: left; transition: all .25s var(--ease); }

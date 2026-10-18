@@ -110,7 +110,7 @@ def run(store: Store) -> dict:
 
 
 def main():
-    p=argparse.ArgumentParser(description="Reproducible Maelin judge proof on a running FalkorDB")
+    p=argparse.ArgumentParser(description="Reproducible empirical verification harness on running FalkorDB")
     p.add_argument('--output', type=Path, help="Optional path for a machine-readable proof JSON")
     args=p.parse_args()
     store=Store(os.getenv('FALKOR_HOST','localhost'),os.getenv('FALKOR_PORT','6379'),
