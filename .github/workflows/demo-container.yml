@@ -25,11 +25,16 @@ jobs:
               except Exception: pass
               time.sleep(2)
           else: raise AssertionError("Bundled FalkorDB never seeded")
+          # Public demo: synthetic alpha/beta are open, every other tenant is protected.
+          graph=json.load(urllib.request.urlopen(root+"/api/graph?tenant=alpha"))
+          assert len(graph["nodes"])>=10, graph
           try:
-              urllib.request.urlopen(urllib.request.Request(root+"/api/graph"))
-              raise AssertionError("Remote graph disclosure was not protected")
+              urllib.request.urlopen(urllib.request.Request(root+"/api/graph?tenant=gamma"))
+              raise AssertionError("Non-demo tenant was not protected")
           except urllib.error.HTTPError as exc:
               assert exc.code==403, exc.code
+          intel=json.load(urllib.request.urlopen(root+"/api/intel?tenant=alpha"))
+          assert intel["min_cut"]["max_flow"]==2, intel
           request=urllib.request.Request(root+"/api/investigate",
               data=json.dumps({"tenant":"alpha"}).encode(),
               headers={"Content-Type":"application/json",

@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
 WORKDIR /app
 COPY requirements.txt /app/
 RUN python3 -m venv /opt/maelin-venv && /opt/maelin-venv/bin/pip install --no-cache-dir -r /app/requirements.txt
-ENV PATH="/opt/maelin-venv/bin:$PATH" PYTHONUNBUFFERED=1 FALKOR_HOST=127.0.0.1 FALKOR_PORT=6379 FALKOR_SSL=0 MAELIN_AGENT_TOOLS=mcp MAELIN_ENABLE_DEMO_MUTATIONS=1
+ENV PATH="/opt/maelin-venv/bin:$PATH" PYTHONUNBUFFERED=1 FALKOR_HOST=127.0.0.1 FALKOR_PORT=6379 FALKOR_SSL=0 MAELIN_AGENT_TOOLS=mcp MAELIN_ENABLE_DEMO_MUTATIONS=1 MAELIN_PUBLIC_DEMO=1
 COPY maelin /app/maelin
 COPY data /app/data
 COPY static /app/static
