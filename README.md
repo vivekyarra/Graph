@@ -319,10 +319,10 @@ Keyboard: `⌘K` commands · `↵` investigate · `1`/`2`/`3` tabs · `/` ask th
 # Install development dependencies
 pip install -r requirements-dev.txt
 
-# 1. Execute offline test suite (83 passed, 13 skipped live integration, 0 failures)
+# 1. Execute offline test suite (109 passed, 13 skipped live integration, 0 failures)
 python -m pytest -q
 
-# 2. Execute full suite with live FalkorDB integration (all 96 tests)
+# 2. Execute full suite with live FalkorDB integration (all 122 tests)
 FALKOR_INTEGRATION=1 python -m pytest -q
 
 # 3. Run empirical cold-start -> replay -> memory adaptation proof
@@ -332,7 +332,7 @@ python -m maelin.verify --output verification-proof.json
 python tests/e2e_real_browser.py
 ```
 
-### Automated Test Suite Inventory (96 Tests across 14 Modules)
+### Automated Test Suite Inventory (122 Tests across 16 Modules)
 | Test Module | Tests | Focus Area |
 |---|---|---|
 | `test_invariants.py` | 6 | Verifies zero in-memory fallback graphs in runtime and absence of arbitrary Cypher tools in MCP server. |
@@ -340,9 +340,11 @@ python tests/e2e_real_browser.py
 | `test_simulation.py` | 7 | Verifies `Graph.copy()` lifecycle, clone namespacing, `try...finally` deletion, and live graph immutability. |
 | `test_logic.py` | 10 | Verifies deterministic Pareto optimization kernel and candidate cut evaluation. |
 | `test_stress.py` | 1 | Property-based oracle over 5,000 synthetic random DAGs verifying Cypher correctness against mathematical traversal oracle. |
-| `test_upgrades.py` | 12 | Verifies `algo.maxFlow`, `algo.pageRank`, `algo.betweenness`, and vector index schemas. |
+| `test_upgrades.py` | 13 | Verifies `algo.maxFlow`, `algo.pageRank`, `algo.betweenness`, and vector index schemas. |
 | `test_agent_proofs.py` | 10 | Verifies choke-point cut math, `RO_QUERY`-only recon, evidence-ID assignment, the hallucination guard, GraphBLAS telemetry and cross-session playbook ranking. |
 | `test_judge_proofs.py` | 8 | Validates cold-start threat reconnaissance, memory adaptation, and counterfactual simulation proofs. |
+| `test_challenger_empirical.py` | 9 | Empirical validation of Menger's theorem bounds, topology drift, and causal policy shifts. |
+| `test_challenger_security.py` | 5 | Verifies fail-closed HTTP 503, operator token enforcement, tenant regex bounds, and MCP schema validation. |
 | `test_agents.py` | 4 | Verifies multi-agent pipeline separation and durable graph handoff persistence. |
 | `test_brain_offline.py` | 8 | Verifies Company Brain full-text search, asset ownership queries, and document provenance. |
 | `test_incident_selection.py` | 6 | Validates scenario selection and graph metadata context. |

@@ -28,8 +28,8 @@
 ## Verification Test Harnesses
 
 Inspect automated test executions rather than static claims:
-1. **Offline Invariants Suite**: `pytest -q` (88 tests validating schema, business logic, Pareto pruning, and invariant preservation).
-2. **Live FalkorDB Integration Suite**: `FALKOR_INTEGRATION=1 pytest -q` (live Cypher execution, vector index creation, and clone operations).
+1. **Offline Invariants Suite**: `pytest -q` (109 passed tests validating schema, business logic, Pareto pruning, invariant preservation, and GraphBLAS telemetry).
+2. **Live FalkorDB Integration Suite**: `FALKOR_INTEGRATION=1 pytest -q` (all 122 tests verifying live Cypher execution, vector index creation, and clone operations).
 3. **End-to-End Verification Pipeline**: `python -m maelin.judge --output verification-proof.json` (reproducible cold-start, clone replay, memory adaptation, and topology drift validation on real disposable graphs).
 4. **Automated Browser Journey**: `python tests/e2e_real_browser.py` (real Chromium browser automation asserting zero layout shift and correct UI execution).
 
