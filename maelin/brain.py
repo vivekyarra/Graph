@@ -46,6 +46,7 @@ WHERE size(hit) > 0 RETURN a.id ORDER BY size(hit) DESC, a.id LIMIT 4""", {"term
 
 def asset_context(store, tenant, asset_id):
     """Everything the company knows about one asset, with provenance."""
+    from .evidence import assign_evidence_ids
     g, _ = store.graphs(tenant)
     exists = g.ro_query("MATCH (a:Asset {id:$id}) RETURN a.kind, a.role", {"id": asset_id}).result_set
     if not exists:
@@ -67,10 +68,10 @@ RETURN d.id, d.title, d.rationale, p.name, src.id, src.title ORDER BY d.created 
         "asset_id": asset_id, "kind": exists[0][0], "role": exists[0][1],
         "owners": [{"team_id": r[0], "team": r[1], "lead": r[2], "contact": r[3],
                     "people": [p for p in r[4] if p]} for r in owners],
-        "documents": [{"id": r[0], "kind": r[1], "title": r[2], "created": r[3],
-                       "author": r[4], "origin": r[5]} for r in docs],
-        "decisions": [{"id": r[0], "title": r[1], "rationale": r[2], "decided_by": r[3],
-                       "source_id": r[4], "source_title": r[5]} for r in decisions],
+        "documents": assign_evidence_ids([{"id": r[0], "kind": r[1], "title": r[2], "created": r[3],
+                       "author": r[4], "origin": r[5]} for r in docs]),
+        "decisions": assign_evidence_ids([{"id": r[0], "title": r[1], "rationale": r[2], "decided_by": r[3],
+                       "source_id": r[4], "source_title": r[5]} for r in decisions]),
         "blast_radius": store.blast_radius(tenant, asset_id),
     }
 

@@ -75,13 +75,14 @@ class FakeGraph:
     def __init__(self):
         self.rows=[]
         self.writes=0
-    def ro_query(self, cypher, params):
+    def ro_query(self, cypher, params=None):
         if 'RETURN a.outcome, a.cost_observed, e.fingerprint' in cypher:
             return types.SimpleNamespace(result_set=self.rows)
         if 'RETURN a.action_id, a.outcome, a.cost_observed' in cypher:
             return types.SimpleNamespace(result_set=[['cut-role','unexpected_outage',100]])
-        raise AssertionError(f'Unexpected graph query: {cypher}')
-    def query(self, cypher, params):
+        # Derived Episode context (tier / paths severed / session age).
+        return types.SimpleNamespace(result_set=[])
+    def query(self, cypher, params=None):
         self.writes+=1
 
 
@@ -91,15 +92,16 @@ def test_memory_report_retry_idempotent_and_conflict_detected():
     store.graphs=lambda tenant:(None,graph)
     args=('alpha','session-1','same-fingerprint','cut-role','unexpected_outage',100,'synthetic')
     assert store.record_outcome(*args)=='session-1:cut-role'
-    assert graph.writes==2
+    # episode + procedure + playbook writes
+    assert graph.writes==3
     graph.rows=[['unexpected_outage',100,'same-fingerprint']]
     assert store.record_outcome(*args)=='session-1:cut-role'
-    assert graph.writes==2
+    assert graph.writes==3
     with pytest.raises(ValueError,match='Conflicting'):
         store.record_outcome('alpha','session-1','same-fingerprint','cut-role','safe',100,'conflicting')
     with pytest.raises(ValueError,match='Conflicting'):
         store.record_outcome('alpha','session-1','different-fingerprint','cut-role','unexpected_outage',100,'poison')
-    assert graph.writes==2
+    assert graph.writes==3
 
 
 def test_actual_api_routes_refuse_graph_writes_without_operator(monkeypatch):

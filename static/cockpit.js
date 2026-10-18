@@ -26,6 +26,8 @@
     verified: null,        // {session_id, action_ids} of the last contained replay
     drifted: false,
     intel: null,
+    critical: null,        // choke-point cut simulation (betweenness + Cypher)
+    playbooks: [],         // proven playbooks recalled from cross-session memory
     stats: null,
     preview: null,         // hover what-if overlay
     focus: [],             // brain-highlighted assets
@@ -393,6 +395,8 @@
       api(q('/api/intel')).then((d) => { state.intel = d; renderIntel(); renderGraph(false); }).catch(() => {}),
       api(q('/api/stats')).then((d) => { state.stats = d; renderLive(); renderMemory(); }).catch(() => {}),
       api(q('/api/teams')).then((d) => { state.owners = d.ownership; }).catch(() => {}),
+      api(q('/api/chokepoints')).then((d) => { state.critical = d; renderIntel(); }).catch(() => {}),
+      api(q('/api/playbooks')).then((d) => { state.playbooks = d.playbooks || []; renderMemory(); }).catch(() => {}),
     ];
     await Promise.all(tasks);
   }
@@ -415,9 +419,11 @@
     if (!i) { box.innerHTML = ''; return; }
     const top = (i.chokepoints || [])[0];
     const pr = (i.centrality || [])[0];
+    const cut = state.critical && (state.critical.chokepoints || [])[0];
     box.innerHTML = `
       <div class="chip c-safe" title="Minimum number of pivots that separate ${esc(i.vulnerable)} from ${esc(i.target)}"><span>Min cut <b>${i.min_cut.max_flow}</b> ${i.min_cut.cut_edges.length ? `· ${esc(i.min_cut.cut_edges.join(' + '))}` : ''}</span><span class="algo">algo.maxFlow</span></div>
       ${top ? `<div class="chip c-threat" style="animation-delay:.08s" title="On ${top.routes} of ${top.total_routes} attack routes · betweenness ${top.betweenness}"><span>Chokepoint <b>${esc(top.asset_id)}</b> · ${Math.round(top.route_share * 100)}% of routes</span><span class="algo">Cypher paths</span></div>` : ''}
+      ${cut ? `<div class="chip c-threat" style="animation-delay:.12s" title="Isolating ${esc(cut.service)} severs ${cut.paths_severed} of ${cut.total_paths} exploit paths to ${esc((cut.target_roles || []).join(', '))}"><span>Cut <b>${esc(cut.service)}</b> · ${Number(cut.pct_blast_radius_eliminated).toFixed(1)}% blast radius</span><span class="algo">cut sim</span></div>` : ''}
       ${pr ? `<div class="chip c-mem" style="animation-delay:.16s" title="Most depended-upon asset"><span>Most depended on <b>${esc(pr.asset_id)}</b></span><span class="algo">algo.pageRank</span></div>` : ''}`;
   }
 
@@ -459,9 +465,19 @@
       return;
     }
     const custom = state.pick && state.scene && (state.pick.source !== state.scene.source || state.pick.vulnerable !== state.scene.vulnerable || state.pick.target !== state.scene.target);
+    const hc = state.run && state.run.hallucination_check;
+    const hcLabel = !hc ? '' : hc.verified ? 'Verified by FalkorDB Graph Proof'
+      : (hc.citations_checked === 0 ? 'No plan citations to verify' : 'Unverified citations detected');
+    const proof = hc ? `<div class="proof rise graph-proof ${hc.verified ? 'ok' : hc.citations_checked ? 'bad' : ''}" style="--i:2" title="${esc(hc.method)}">
+        <svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        <span>${hcLabel}</span>
+        ${(hc.evidence_ids || []).map((id) => `<span class="ev mono">${esc(id)}</span>`).join('')}
+        <span class="mono faint">${hc.citations_checked} citation${hc.citations_checked === 1 ? '' : 's'} checked</span>
+      </div>` : '';
     const head = `
       <div class="eyebrow rise" style="--i:0">Incident<span class="line"></span>${state.drifted ? '<span class="pill warn">topology drifted</span>' : ''}</div>
       <h2 class="rise" style="--i:1">${esc(custom ? `${pick.vulnerable} compromised` : (state.scene.scenario || 'Graph incident'))}</h2>
+      ${proof}
       <div class="route-pick rise" style="--i:2">
         <div class="pick"><label>Entry</label><select data-pick="source" style="color-scheme: light;">${nodeOptions(pick.source)}</select></div><span class="arrow">→</span>
         <div class="pick v"><label>Compromised</label><select data-pick="vulnerable" id="vulnerable" style="color-scheme: light;">${nodeOptions(pick.vulnerable)}</select></div><span class="arrow">→</span>
@@ -508,6 +524,8 @@
         </div>
       </div>
       ${mc ? `<div class="proof rise" style="--i:6"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg><span>${mc.optimal ? `<b>Proven minimal.</b> ${mc.max_flow} independent pivots, ${mc.plan_edge_cuts} cuts.` : `<b>Min cut ${mc.max_flow}.</b> Plan uses ${mc.plan_edge_cuts} edge + ${mc.plan_node_cuts} node cuts.`}</span><span class="mono">algo.maxFlow</span></div>` : ''}
+      ${chokeCutHtml(a)}
+      ${traceDrawer(run)}
       ${memoryBanner()}`;
 
     if (state.stage === 1) {
@@ -560,6 +578,44 @@
     return `<div class="decision rise" style="--i:3" data-preview="plan">
       <span class="pill safe">B</span><span class="d-t">${esc(plan.actions.join(' + '))}</span>
       <span class="d-n"><b>${plan.disruption_cost}</b>${naive ? `<s>${naive.disruption_cost}</s>` : ''}<small>$k/h</small></span></div>`;
+  }
+
+  function chokeCutHtml(a) {
+    const cuts = (a && a.critical_chokepoints) || [];
+    if (!cuts.length) return '';
+    const sentence = a.chokepoint_summary || '';
+    const rows = cuts.slice(0, 3).map((c) => `<div class="li">
+      <span class="kind postmortem">CUT</span>
+      <div><div class="t">${esc(c.service)}</div><div class="s">${c.paths_severed} of ${c.total_paths} exploit paths to ${esc((c.target_roles || []).join(', ') || 'privileged identities')}</div></div>
+      <span class="meter-mini" title="${c.pct_blast_radius_eliminated}% of blast radius eliminated"><i style="width:${Math.max(2, Math.min(100, Number(c.pct_blast_radius_eliminated) || 0))}%"></i></span>
+      <b class="mono" style="font-size:11px">${Number(c.pct_blast_radius_eliminated || 0).toFixed(1)}%</b></div>`).join('');
+    return `<div class="eyebrow rise" style="--i:6">Choke-point cut<span class="line"></span><span class="algo">algo.betweenness + Cypher</span></div>
+      ${sentence ? `<div class="verdict rise" style="--i:6">${esc(sentence)}</div>` : ''}
+      <div class="card rise" style="--i:6;padding:4px 12px"><div class="list" id="chokepointCuts">${rows}</div></div>`;
+  }
+
+  function traceDrawer(run) {
+    const rows = (run && run.telemetry_trace) || [];
+    if (!rows.length) return '';
+    const total = rows.reduce((s, r) => s + (Number(r.run_time_ms) || 0), 0);
+    const body = rows.map((r, i) => `<div class="li trace-row" data-trace-row="${i}" data-graph="${esc(r.graph_name)}">
+      <span class="kind ${r.query_type === 'ro_query' ? 'runbook' : 'chat'}">${r.query_type === 'ro_query' ? 'RO' : 'RW'}</span>
+      <div><div class="t">${esc(r.agent_name || 'agent')} · <span class="mono">${esc(r.graph_name || '')}</span></div>
+        <div class="s mono">${esc(r.evidence_id || '—')} · ${r.run_time_ms == null ? 'n/a' : Number(r.run_time_ms).toFixed(2) + ' ms via FalkorDB GraphBLAS'}</div>
+        <details class="cypher-detail"><summary>query</summary><pre class="cypher">${highlightCypher(r.cypher || '')}</pre></details></div>
+      <b class="mono" style="font-size:11px">${r.run_time_ms == null ? '—' : Number(r.run_time_ms).toFixed(2) + ' ms'}</b></div>`).join('');
+    return `<div class="eyebrow rise" style="--i:6">FalkorDB execution trace<span class="line"></span>
+        <span class="mono faint">${rows.length} queries · ${total.toFixed(2)} ms total</span>
+        <button class="btn btn-ghost btn-sm" data-act="trace" style="margin-left:8px">Open drawer</button></div>
+      <div class="card trace-card rise" id="traceDrawer" style="--i:6;padding:4px 12px"><div class="list">${body}</div></div>`;
+  }
+
+  function showTrace() {
+    const run = state.run;
+    if (!run) return toast('Investigate first.', 'warn');
+    const rows = run.telemetry_trace || [];
+    const blocks = rows.map((r) => `<div><div class="eyebrow">${esc(r.agent_name || 'agent')} · ${esc(r.graph_name || '')} · ${esc(r.evidence_id || '—')} · <b>${r.run_time_ms == null ? 'n/a' : Number(r.run_time_ms).toFixed(2) + ' ms'}</b> via FalkorDB GraphBLAS (${esc(r.query_type)})</div><pre class="cypher">${highlightCypher(r.cypher || '')}</pre></div>`).join('');
+    modal('FalkorDB execution trace', `<div class="stack"><div class="muted" style="font-size:12px">Every row is one GraphBLAS query FalkorDB executed for this investigation. Times are server-reported <span class="mono">run_time_ms</span>, not browser wall-clock.</div>${blocks || '<div class="empty">No traced queries.</div>'}</div>`);
   }
 
   function memoryBanner() {
@@ -748,6 +804,12 @@
         <div class="stat"><div class="n" data-count="${s.episodes || 0}">0</div><div class="k">episodes</div></div>
         <div class="stat"><div class="n" data-count="${s.memory_nodes || 0}">0</div><div class="k">memory nodes</div></div>
       </div>
+      <div class="eyebrow rise" style="--i:2">Proven playbooks<span class="line"></span><span class="mono">cross-session recall</span></div>
+      ${(state.playbooks || []).length ? `<div class="card rise" style="--i:3;padding:4px 12px"><div class="list">${state.playbooks.map((p) => `
+        <div class="li"><span class="kind runbook">PB</span><div><div class="t">${esc(p.playbook_id)}</div>
+          <div class="s">used ${p.times_used}× · avg MTTR ${p.avg_mttr_seconds == null ? 'n/a' : Math.round(p.avg_mttr_seconds) + 's'} · ${esc((p.last_used_at || '').slice(0, 19))}</div></div>
+          <span class="pill mem">proven</span></div>`).join('')}</div></div>`
+        : `<div class="empty rise" style="--i:3">No playbook has resolved a matching incident yet.<br><span style="font-size:11px">Record an outcome, then open a new session to see recall accelerate.</span></div>`}
       <div class="eyebrow rise" style="--i:2">Recalled for this incident<span class="line"></span></div>
       ${prec.length ? `<div class="card rise" style="--i:3;padding:4px 12px"><div class="list">${prec.slice(0, 5).map((p) => `
         <div class="li"><span class="kind ${p.outcome === 'unexpected_outage' ? 'postmortem' : 'runbook'}">${p.match_type === 'exact' ? 'EX' : p.match_type === 'vector' ? 'VEC' : 'SEM'}</span>
@@ -948,6 +1010,8 @@
       ['Recon · every multi-hop route through the compromised asset', q1.replace(/ (WITH|RETURN|LIMIT) /g, '\n$1 ')],
       ['Remediation · proven minimum cut', "MATCH (s:Asset {id:$vulnerable}), (t:Asset {id:$target})\nCALL algo.maxFlow({sourceNodes:[s], targetNodes:[t],\n  capacityProperty:'cap', relationshipTypes:['CAN_PIVOT']})\nYIELD edges, edgeFlows, maxFlow"],
       ['Recon · attack chokepoints', "CALL algo.betweenness({nodeLabels:['Asset'], relationshipTypes:['CAN_PIVOT']})\nYIELD node, score RETURN node.id, score ORDER BY score DESC"],
+      ['Remediation · choke-point cut simulation', "MATCH p = (ing:Asset {kind:'ingress'})-[:CAN_PIVOT*1..6]->(svc:Asset {kind:'service'})\n  -[:CAN_PIVOT]->(iam:Asset {kind:'identity'})\nWITH collect(p) AS all_paths, count(DISTINCT p) AS total_paths\nUNWIND all_paths AS p UNWIND nodes(p) AS n\nWITH n, count(DISTINCT p) AS paths_severed, total_paths\nRETURN n.id AS chokepoint_service, paths_severed, total_paths,\n  (toFloat(paths_severed) / toFloat(total_paths)) * 100.0 AS pct_blast_radius_eliminated"],
+      ['Memory · proven playbooks across sessions', "MATCH (s:Session)-[:RECORDED]->(ep:Episode)-[r:RESOLVED_BY]->(pb:Playbook)\nWHERE ep.cve_id = $cve_id OR ep.service_tier = $service_tier\nRETURN pb.action_id, count(ep) AS times_used,\n  avg(r.mttr_seconds) AS avg_mttr_seconds\nORDER BY times_used DESC, avg_mttr_seconds ASC LIMIT 3"],
       ['Memory · similar past incidents', "CALL db.idx.vector.queryNodes('Episode', 'embedding', $k, vecf32($vec))\nYIELD node, score\nMATCH (node)-[:OBSERVED]->(a:ActionExperience)\nRETURN a.action_id, a.outcome, score"],
       ['Replay · on a disposable GRAPH.COPY clone', "MATCH ()-[r:CAN_PIVOT {edge_id:$edge_id}]->() DELETE r\nMATCH (n:Asset {id:$node_id}) DETACH DELETE n"],
     ];
@@ -1010,6 +1074,7 @@
     if (act === 'simulate') return simulate();
     if (act === 'allsafe') return allSafe();
     if (act === 'cypher') return showCypher();
+    if (act === 'trace') return showTrace();
     if (act === 'reset') return resetDemoState();
     if (act === 'retest' && state.verified) return simulate(state.verified.action_ids, state.verified.session_id, state.verified.blocks);
     if (t.dataset.outage) return recordOutcome(t.dataset.outage, 'unexpected_outage');

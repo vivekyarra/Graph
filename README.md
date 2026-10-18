@@ -7,10 +7,14 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Database: FalkorDB](https://img.shields.io/badge/Database-FalkorDB-FF4F00.svg)](https://www.falkordb.com/)
 [![Protocol: Model Context Protocol](https://img.shields.io/badge/Protocol-MCP-8A2BE2.svg)](https://modelcontextprotocol.io/)
+[![FalkorDB Stack](https://img.shields.io/badge/Stack-FalkorDB%20GraphBLAS-FF4F00.svg)](docs/CYPHER.md)
+[![FalkorDB 6.x](https://img.shields.io/badge/FalkorDB-6.x%20hardened-3ee6b0.svg)](docs/CYPHER.md)
+[![Track 01](https://img.shields.io/badge/Graph%20Hacks-Track%2001%20Connected%20Data-ff6b5b.svg)](#hackathon-track--architecture-mapping)
+[![Track 02](https://img.shields.io/badge/Graph%20Hacks-Track%2002%20Agent%20Memory-9b8cff.svg)](#hackathon-track--architecture-mapping)
 
 **Simulate before you remediate.** Zero in-memory state, bounded Cypher provenance, provable min-cut isolation, and multi-tenant causal memory powered by native **FalkorDB** graph algorithms.
 
-[Live Interactive Cockpit](https://maelin-graph-hacks-demo.onrender.com) • [System Verification Guide](docs/evaluation_guide.md) • [Deployment Docs](docs/deployment.md) • [Contributing](CONTRIBUTING.md)
+[Live Interactive Cockpit](https://maelin-graph-hacks-demo.onrender.com) • [Complete Cypher Catalog](docs/CYPHER.md) • [System Verification Guide](docs/evaluation_guide.md) • [Deployment Docs](docs/deployment.md) • [Contributing](CONTRIBUTING.md)
 
 ---
 
@@ -26,13 +30,18 @@ MAELIN is an incident-response agent team whose only shared brain is **FalkorDB*
 |---|---|---|
 | 1 | **Recon** enumerates *every* multi-hop route from the entry point through the compromised asset to the crown jewel, plus every customer flow that depends on each asset | Bounded variable-length Cypher (`CAN_PIVOT*1..7`, `DEPENDS_ON*1..7`) with `nodes(p)` / `relationships(p)` provenance |
 | 2 | **Recon** ranks attack chokepoints | Cypher path counting + `algo.betweenness` |
-| 3 | **Memory** recalls past outcomes for this incident, a structurally similar one, or a semantically matching pattern | Episode graph + **vector index** (`db.idx.vector.queryNodes`) |
-| 4 | **Remediation** scores every complete 1–3 action cut, compares *Future A* (quarantine, 160 $k/h impact) with *Future B* (surgical cut, 0 impact) and **proves the cut is minimal** | `algo.maxFlow` min-cut (Menger bound) |
-| 5 | The chosen plan is **replayed on a disposable clone**: real `DELETE`s, real re-traversal, clone deleted | `GRAPH.COPY` via `Graph.copy()` |
-| 6 | The operator reports the outcome. It becomes an episode **and** a postmortem document; the next session picks a different plan | Memory graph writes + Company Brain documents |
-| 7 | Anyone can ask "is it safe to quarantine auth-service?" and get an answer **with sources**: runbooks, postmortems, owners, on-call, decisions | **Full-text index** (`db.idx.fulltext.queryNodes`) + ownership/decision traversal |
+| 3 | **Recon & Remediation** run the *choke-point cut simulation*: how many ingress → service → privileged-identity exploit paths does isolating one service sever? | Bounded `CAN_PIVOT*1..6` traversal + distinct-path aggregation (`paths_severed`, `pct_blast_radius_eliminated`) |
+| 4 | **Memory** recalls past outcomes for this incident, a structurally similar one, or a semantically matching pattern | Episode graph + **vector index** (`db.idx.vector.queryNodes`) |
+| 5 | **Memory** recalls *proven playbooks* ranked by usage and observed MTTR across sessions | `(:Session)-[:RECORDED]->(:Episode)-[:RESOLVED_BY]->(:Playbook)` aggregation |
+| 6 | **Remediation** scores every complete 1–3 action cut, compares *Future A* (quarantine, 160 $k/h impact) with *Future B* (surgical cut, 0 impact), and **proves the cut is minimal** | `algo.maxFlow` min-cut (Menger bound) |
+| 7 | Every cited service, CVE-equivalent and role is cross-checked against the nodes FalkorDB actually returned | Deterministic evidence IDs `[E1]…` + set-membership `hallucination_check` |
+| 8 | The chosen plan is **replayed on a disposable clone**: real `DELETE`s, real re-traversal, clone deleted | `GRAPH.COPY` via `Graph.copy()` |
+| 9 | The operator reports the outcome. It becomes an episode **and** a postmortem document; the next session picks a different plan | Memory graph writes + Company Brain documents |
+| 10 | Anyone can ask "is it safe to quarantine auth-service?" and get an answer **with sources**: runbooks, postmortems, owners, on-call, decisions | **Full-text index** (`db.idx.fulltext.queryNodes`) + ownership/decision traversal |
 
-Agents never pass state in Python. Each specialist reads the previous one's work from immutable `(:Session)-[:HAS_HANDOFF]->(:Handoff)` nodes, and every graph read goes through **real MCP stdio tool calls** (`maelin/mcp_server.py`, 11 typed, parameterized tools). Remove FalkorDB and nothing works: the API fails closed with HTTP 503.
+Agents never pass state in Python. Each specialist reads the previous one's work from immutable `(:Session)-[:HAS_HANDOFF]->(:Handoff)` nodes, and every graph read goes through **real MCP stdio tool calls** (`maelin/mcp_server.py`, 13 typed, parameterized tools). Remove FalkorDB and nothing works: the API fails closed with HTTP 503.
+
+Reconnaissance is read-only *at the protocol level*: every agent read executes as **`GRAPH.RO_QUERY`**, which FalkorDB rejects if the statement would write. Writes (`seed.py`, outcome memory) use `GRAPH.QUERY`. Each query returns a `telemetry_trace` row with its server-reported `run_time_ms`, the target graph, the agent and its evidence ID — rendered live in the cockpit's execution-trace drawer.
 
 ---
 
@@ -43,6 +52,65 @@ Agents never pass state in Python. Each specialist reads the previous one's work
 | **Autonomous Graph Agents** *(Connected Data)* | Multi-hop reasoning, native graph algorithms as agent tools, MCP tool selection, actions grounded in graph topologies, explainable results | **Investigate** → 2 routes with hop provenance; HUD chips for `algo.maxFlow`, chokepoints and `algo.pageRank`; **Replay** cuts edges on a clone (2 → 0 routes); **Cypher** button inspects generated queries |
 | **Agent Memory & State Coordination** *(Episodic, Semantic & Procedural)* | Multi-layered episodic, semantic and procedural memory; persistent history; zero-in-memory handoffs; tenant-scoped isolation; high concurrency | Report an outage → **New session** → decision dynamically adapts with causal with/without-memory ablation banner. **Memory** tab: sessions, episodes, exact/semantic/vector recall, handoff ledger. Multi-tenant graph isolation |
 | **Company Brain & Knowledge Subgraph** *(Organizational Intelligence)* | Unified enterprise knowledge graph mapping services, revenue flows, teams, and postmortems; cited question answering; live ownership graph | **Brain** tab: ask domain questions with citation grounding. Interactive node inspection for service owners, on-call engineers, ADRs, postmortems, and blast radius |
+
+---
+
+## Architecture: two graphs, three agents, one MCP loop
+
+```mermaid
+flowchart LR
+  subgraph FALKOR["FalkorDB 6.x — the only shared brain"]
+    direction TB
+    subgraph TOPO["TOPOLOGY GRAPH · maelin_&lt;tenant&gt;_topology"]
+      direction LR
+      ING((":Asset<br/>kind: ingress")) -->|CAN_PIVOT| SVC((":Asset<br/>kind: service"))
+      SVC -->|CAN_PIVOT| IAM((":Asset<br/>kind: identity"))
+      IAM -->|CAN_PIVOT| DB[(":Asset<br/>kind: database")]
+      FLOW[":Asset<br/>business_flow"] -.->|DEPENDS_ON| SVC
+      IV[":Intervention<br/>action catalog"]
+      TEAM[":Team"] -->|OWNS| SVC
+      DOC[":Document / :Decision"]
+    end
+    subgraph MEM["SWARM MEMORY · maelin_&lt;tenant&gt;_memory"]
+      direction LR
+      SES[":Session"] -->|HAS_HANDOFF| HO[":Handoff"]
+      SES -->|PROPOSED| PA[":ProposedAction"]
+      SES -->|RESULTED_IN| EP[":Episode<br/>cve_id · service_tier<br/>paths_severed · timestamp"]
+      EP -->|OBSERVED| AX[":ActionExperience"]
+      EP -->|RESOLVED_BY<br/>mttr_seconds · verified_by_agent<br/>paths_severed| PB[":Playbook<br/>action_id · command"]
+      EP -->|REMEMBERS| SP[":SemanticPattern"]
+    end
+  end
+
+  subgraph AGENTS["Three bounded specialists (state only via FalkorDB)"]
+    direction TB
+    RECON["Recon & Graph Mapper<br/>attack paths · chokepoints<br/>choke-point cut simulation"]
+    MEMORY["Episodic Memory Coordinator<br/>exact · semantic · vector recall<br/>proven playbooks"]
+    REM["Explainable Remediation<br/>maxFlow min-cut · Pareto plans<br/>evidence verification"]
+    RECON -->|HAS_HANDOFF: mapped| MEMORY
+    MEMORY -->|HAS_HANDOFF: recalled| REM
+  end
+
+  subgraph MCP["MCP stdio loop"]
+    CLIENT["maelin/mcp_client.py"]
+    SERVER["maelin/mcp_server.py<br/>13 typed tools · no arbitrary Cypher"]
+    CLIENT <-->|"tools/call ↔ structured JSON + telemetry"| SERVER
+  end
+
+  RECON -.-> CLIENT
+  MEMORY -.-> CLIENT
+  REM -.-> CLIENT
+  SERVER -->|"GRAPH.RO_QUERY (reads)"| TOPO
+  SERVER -->|"GRAPH.RO_QUERY (recall)"| MEM
+  SERVER -->|"GRAPH.QUERY (episodes)"| MEM
+  REM -->|"Graph.copy() → DELETE → re-traverse"| CLONE[("disposable clone<br/>maelin_&lt;tenant&gt;_sim_xxxxxxxx")]
+```
+
+Every arrow between agents is a **persisted graph handoff**, not a Python argument.
+Every arrow into FalkorDB is a **parameterized Cypher query** whose server-side
+`run_time_ms` is surfaced in the cockpit telemetry drawer. The complete query
+catalog, per-agent grouping and FalkorDB 6.x syntax rules are in
+**[docs/CYPHER.md](docs/CYPHER.md)**.
 
 ---
 
@@ -69,9 +137,13 @@ MEMORY GRAPH
 (:Session)-[:HAS_HANDOFF]->(:Handoff {agent, status, payload})    agent coordination
 (:Session)-[:HAS_TURN]->(:ConversationTurn)                       conversation history
 (:Session)-[:PROPOSED]->(:ProposedAction)
-(:Session)-[:RESULTED_IN]->(:Episode {embedding})-[:OBSERVED]->(:ActionExperience)   episodic
+(:Session)-[:RECORDED]->(:Episode)  (alias of RESULTED_IN, used by playbook recall)
+(:Episode {episode_id, cve_id, service_tier, paths_severed,
+           blast_radius_score, timestamp, embedding})-[:OBSERVED]->(:ActionExperience)   episodic
+(:Episode)-[:RESOLVED_BY {mttr_seconds, verified_by_agent,
+                          paths_severed}]->(:Playbook {action_id, command, description})   procedural
 (:IncidentPattern)-[:HAS_EPISODE]->(:Episode)
-(:IncidentPattern)-[:HAS_PROCEDURE]->(:Procedure)-[:SUPPORTED_BY]->(:ActionExperience)   procedural
+(:IncidentPattern)-[:HAS_PROCEDURE]->(:Procedure)-[:SUPPORTED_BY]->(:ActionExperience)
 (:SemanticPattern)-[:REMEMBERS]->(:Episode)                        semantic
 ```
 
@@ -154,6 +226,28 @@ Ownership is the `(:Team)-[:OWNS]->(:Asset)` subgraph; `CALL algo.pageRank('Asse
 ---
 
 ## Quickstart & Startup Options
+
+### Fastest path (3 commands, from a clean clone)
+
+```bash
+docker compose up -d --build
+docker compose exec app python -m maelin.seed --tenant alpha
+docker compose exec app python -m maelin.seed --tenant beta
+```
+
+Open **http://localhost:8000** for the cockpit and **http://localhost:3000** for the
+FalkorDB Browser. The cockpit is static HTML/JS served by the FastAPI process — there
+is no separate frontend build step (`static/` is mounted at `/assets`).
+
+Running on the host instead of Compose:
+
+```bash
+docker compose up -d graph
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m maelin.seed --tenant alpha --reset
+uvicorn maelin.api:api --host 0.0.0.0 --port 8000
+```
 
 ### Option 1: Standalone Demo Container (All-in-One FalkorDB + App)
 Spins up FalkorDB and the FastAPI application in a single container with synthetic tenants (`alpha`, `beta`) auto-seeded on boot:
@@ -247,6 +341,7 @@ python tests/e2e_real_browser.py
 | `test_logic.py` | 10 | Verifies deterministic Pareto optimization kernel and candidate cut evaluation. |
 | `test_stress.py` | 1 | Property-based oracle over 5,000 synthetic random DAGs verifying Cypher correctness against mathematical traversal oracle. |
 | `test_upgrades.py` | 12 | Verifies `algo.maxFlow`, `algo.pageRank`, `algo.betweenness`, and vector index schemas. |
+| `test_agent_proofs.py` | 10 | Verifies choke-point cut math, `RO_QUERY`-only recon, evidence-ID assignment, the hallucination guard, GraphBLAS telemetry and cross-session playbook ranking. |
 | `test_judge_proofs.py` | 8 | Validates cold-start threat reconnaissance, memory adaptation, and counterfactual simulation proofs. |
 | `test_agents.py` | 4 | Verifies multi-agent pipeline separation and durable graph handoff persistence. |
 | `test_brain_offline.py` | 8 | Verifies Company Brain full-text search, asset ownership queries, and document provenance. |
@@ -267,7 +362,20 @@ All data is synthetic. MAELIN never touches real infrastructure; recommendations
 ## Hackathon Track & Architecture Mapping
 
 MAELIN addresses three core technical capability domains for **Graph Hacks 2026 (WeMakeDevs × FalkorDB)**:
-* **Track 01: Agents That Act on Connected Data** — Multi-hop Cypher traversals (`nodes(p)`, `relationships(p)`), native `algo.maxFlow` min-cut, and `algo.pageRank` dependency centrality.
-* **Track 02: Agent Memory and Coordination** — Episodic, semantic, and procedural memory graphs, zero-in-memory handoffs, and tenant-isolated causal policy ablation.
-* **Track 03: Company Brain** — Unified enterprise knowledge graph mapping services, revenue flows, and engineering teams with cited natural-language retrieval.
+
+| Track | What the judges can verify | Where it lives |
+|---|---|---|
+| **Track 01 — Agents That Act on Connected Data** | Multi-hop Cypher traversals (`nodes(p)`, `relationships(p)`), native `algo.maxFlow` min-cut, `algo.pageRank` dependency centrality, `algo.betweenness`, and the **choke-point cut simulation** (`paths_severed`, `pct_blast_radius_eliminated`) wired into the Remediation narrative | `maelin/store.py` · `find_critical_chokepoints` · `GET /api/chokepoints` · [docs/CYPHER.md](docs/CYPHER.md) §1.4 |
+| **Track 02 — Agent Memory and Coordination** | Episodic, semantic, vector and **procedural playbook** memory; zero in-memory handoffs; tenant-isolated causal policy ablation; `(:Episode)-[:RESOLVED_BY]->(:Playbook)` recall ranked by usage and MTTR | `maelin/store.py` · `recall_proven_playbook` · `GET /api/playbooks` · [docs/CYPHER.md](docs/CYPHER.md) §2 |
+| **Track 03 — Company Brain** | Unified enterprise knowledge graph mapping services, revenue flows, and engineering teams with cited natural-language retrieval | `maelin/brain.py` · `GET /api/brain/ask` |
+
+### Cross-cutting proof surface
+
+| Capability | Evidence |
+|---|---|
+| Protocol-level read-only reconnaissance | `Store._ro` → `GRAPH.RO_QUERY` on every agent read; writes isolated in `Store._rw` |
+| Anti-hallucination guard | deterministic `[E1]…` IDs + `hallucination_check` (`verified`, `verified_nodes`, `unverified_nodes`) in `/api/investigate`; UI badge **Verified by FalkorDB Graph Proof** |
+| Sub-millisecond graph telemetry | `telemetry_trace` rows with `graph_name`, `agent_name`, `query_type`, `cypher`, `run_time_ms`; cockpit **FalkorDB Execution Trace** drawer |
+| FalkorDB 6.x / injection hardening | `shortestPath` only inside `WITH`/`RETURN` with directed, bounded hops; zero f-string interpolation (relationship types are static constants); every user-influenced value is a named parameter |
+| Complete query catalog | [docs/CYPHER.md](docs/CYPHER.md) — per-agent, per-graph, with rationale and measured latency |
 

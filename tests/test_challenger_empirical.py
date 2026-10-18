@@ -35,7 +35,7 @@ def test_cypher_traversals_are_strictly_bounded_and_fail_closed():
     sim_code = (ROOT / "maelin" / "simulator.py").read_text(encoding="utf-8")
     agents_code = (ROOT / "maelin" / "agents.py").read_text(encoding="utf-8")
 
-    # 1. Check bounded depth
+    # 1. Check bounded depth (1..7 for full enumeration, 1..6 for chokepoint cuts)
     traversal_patterns = [
         r"-:CAN_PIVOT\*(?P<bound>[0-9a-zA-Z._]+)->",
         r"-:DEPENDS_ON\*(?P<bound>[0-9a-zA-Z._]+)->",
@@ -44,7 +44,8 @@ def test_cypher_traversals_are_strictly_bounded_and_fail_closed():
         for pattern in traversal_patterns:
             matches = list(re.finditer(pattern, code))
             for m in matches:
-                assert m.group("bound") == "1..7", f"Found unbounded or non-standard depth: {m.group(0)}"
+                assert re.fullmatch(r"1\.\.[1-7]", m.group("bound")), \
+                    f"Found unbounded or non-standard depth: {m.group(0)}"
 
     # 2. Check no arbitrary / unbounded regex
     assert re.search(r"-\[[a-zA-Z0-9_:]*\*\]->", store_code) is None, "Found unbounded Cypher edge * traversal"

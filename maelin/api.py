@@ -71,6 +71,9 @@ class Outcome(BaseModel):
     outcome: str
     cost_observed: int = Field(default=0,ge=0,le=1000)
     note: str = Field(default="Synthetic operator-reported incident",max_length=400)
+    # Optional operator-supplied resolution time; derived from graph session
+    # age when omitted, never invented.
+    mttr_seconds: int | None = Field(default=None, ge=0, le=86_400)
 
 
 class DemoReset(BaseModel):
@@ -201,7 +204,8 @@ def outcome(req: Outcome, request: Request):
         scene = store().session_scene(req.tenant,req.session_id)
         ep=store().record_outcome(req.tenant,req.session_id,scene["fingerprint"],
                                   req.action_id,req.outcome,req.cost_observed,req.note,
-                                  semantic_key=scene.get("semantic_key"))
+                                  semantic_key=scene.get("semantic_key"),
+                                  mttr_seconds=req.mttr_seconds)
         action = next((a for a in store().interventions(req.tenant) if a["id"] == req.action_id), None)
         postmortem = None
         if action is not None:
@@ -313,6 +317,34 @@ def graph_intel(request: Request, tenant: str = TENANT_Q,
                 "centrality": s.compute_asset_centrality(tenant)[:5]}
     except Exception as e:
         raise HTTPException(503, f"FalkorDB algorithm call failed: {type(e).__name__}") from e
+
+
+@api.get("/api/chokepoints")
+def critical_chokepoints(request: Request, tenant: str = TENANT_Q,
+                         vulnerable: str | None = Query(None, pattern=ASSET_ID),
+                         source: str | None = Query(None, pattern=ASSET_ID),
+                         target: str | None = Query(None, pattern=ASSET_ID)):
+    """Betweenness ranking plus attack-path cut simulation (read-only)."""
+    require_operator(request, tenant)
+    try:
+        return store().critical_chokepoints(tenant, vulnerable, source, target)
+    except OverflowError as e:
+        raise HTTPException(422, str(e)) from e
+    except Exception as e:
+        raise HTTPException(503, f"FalkorDB chokepoint analysis failed: {type(e).__name__}") from e
+
+
+@api.get("/api/playbooks")
+def proven_playbooks(request: Request, tenant: str = TENANT_Q,
+                     cve_id: str | None = Query(None, max_length=180),
+                     service_tier: str = Query("service", max_length=40)):
+    """Cross-session memory: playbooks ranked by usage and observed MTTR."""
+    require_operator(request, tenant)
+    try:
+        fingerprint = cve_id or store().graph_scene(tenant).get("fingerprint", "")
+        return {"playbooks": store().recall_proven_playbook(tenant, fingerprint, service_tier)}
+    except Exception as e:
+        raise HTTPException(503, f"FalkorDB playbook recall failed: {type(e).__name__}") from e
 
 
 @api.get("/api/stats")

@@ -29,13 +29,17 @@ def test_asset_centrality_calculation_with_mock_graph():
             self.result_set = rows
 
     class MockTopology:
-        def query(self, q, params=None):
+        def ro_query(self, q, params=None):
             assert "algo.pageRank" in q
             return MockQueryResult([
                 ["auth-service", "authentication", 0.4521],
                 ["customer-db", "primary_datastore", 0.3812],
                 ["edge-gateway", "api_gateway", 0.1245],
             ])
+
+        def query(self, q, params=None):
+            # Centrality is reconnaissance: it must never use GRAPH.QUERY.
+            raise AssertionError("read-only centrality must use ro_query")
 
     store = Store.__new__(Store)
     store.graphs = lambda tenant: (MockTopology(), None)

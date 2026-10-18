@@ -6,22 +6,25 @@ not simply trusting the optimizer's path enumeration.
 """
 from __future__ import annotations
 import uuid
+from .telemetry import traced_query
 
 
 def _threat_paths(graph, scene):
-    rows = graph.ro_query("""MATCH p=(s:Asset {id:$source})-[:CAN_PIVOT*1..7]->(t:Asset {id:$target})
+    rows = traced_query(graph, """MATCH p=(s:Asset {id:$source})-[:CAN_PIVOT*1..7]->(t:Asset {id:$target})
 WITH p WHERE ANY(n IN nodes(p) WHERE n.id=$vulnerable)
 RETURN [n IN nodes(p) | n.id], [r IN relationships(p) | r.edge_id] LIMIT 257""",
-        {"source":scene["source"],"target":scene["target"],"vulnerable":scene["vulnerable"]}).result_set
+        {"source":scene["source"],"target":scene["target"],"vulnerable":scene["vulnerable"]},
+        agent_name="Sandbox Replay", query_type="ro_query").result_set
     if len(rows) > 256:
         raise OverflowError("Simulation traversal exceeded 256 candidate paths; outcome is inconclusive")
     return [{"nodes":r[0], "edges":r[1]} for r in rows]
 
 
 def _business_paths(graph):
-    rows = graph.ro_query("""MATCH p=(f:Asset)-[:DEPENDS_ON*1..7]->(s:Asset)
+    rows = traced_query(graph, """MATCH p=(f:Asset)-[:DEPENDS_ON*1..7]->(s:Asset)
 WHERE f.kind='business_flow'
-RETURN f.id, f.value, [n IN nodes(p) | n.id] LIMIT 1025""").result_set
+RETURN f.id, f.value, [n IN nodes(p) | n.id] LIMIT 1025""",
+        agent_name="Sandbox Replay", query_type="ro_query").result_set
     if len(rows) > 1024:
         raise OverflowError("Simulation dependency traversal exceeded 1024 paths")
     return [{"flow":r[0],"value":r[1],"nodes":r[2]} for r in rows]

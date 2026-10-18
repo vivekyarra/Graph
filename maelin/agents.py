@@ -7,6 +7,9 @@ integration can be layered on top without granting it direct Cypher access.
 from .logic import analyze
 from .llm import adjudicate, synthesize_recon_insight, synthesize_memory_insight, synthesize_remediation_insight
 from .reasoner import reason_with_tools
+from .evidence import (assign_evidence_ids, severance_sentence,
+                       traversed_node_ids, verify_agent_remediation)
+from .telemetry import merge_trace, telemetry_scope
 import os
 
 
@@ -23,6 +26,9 @@ def graph_tool(store, tenant, sid, name, parameters, direct, result_key, whole=F
         return direct()
     from .mcp_client import call_tool
     result = call_tool(name, {"tenant":tenant, **parameters})
+    # Queries ran inside the MCP subprocess; merge their FalkorDB timings into
+    # this investigation's execution trace.
+    merge_trace(result.get("telemetry") if isinstance(result, dict) else None)
     if result_key not in result or not isinstance(result[result_key], list):
         raise RuntimeError("Invalid MCP graph tool evidence")
     store.handoff(tenant, sid, "mcp", "tool_called", {
@@ -42,8 +48,26 @@ class ReconAgent:
         chokepoints = graph_tool(store, tenant, sid, "find_attack_chokepoints",
             {"source":scene["source"], "target":scene["target"]},
             lambda:store.chokepoints(tenant, scene["source"], scene["target"]), "chokepoints")             if hasattr(store, "chokepoints") else []
+        # Track 01: native betweenness + attack-path cut simulation. Optional
+        # for offline doubles; a missing implementation never fabricates data.
+        critical = {}
+        if hasattr(store, "critical_chokepoints"):
+            critical = graph_tool(store, tenant, sid, "find_critical_chokepoints",
+                {"vulnerable":scene["vulnerable"], "source":scene["source"], "target":scene["target"]},
+                lambda:store.critical_chokepoints(tenant, scene["vulnerable"],
+                                                  scene["source"], scene["target"]),
+                "chokepoints", whole=True)
+        kinds = {n["id"]: n["kind"] for n in store.topology(tenant)["nodes"]} if hasattr(store, "topology") else {}
+        service_tier = kinds.get(scene["vulnerable"], "service")
+        intervention_catalog = store.interventions(tenant) if hasattr(store, "interventions") else []
         store.handoff(tenant, sid, self.name, "mapped", {
             "chokepoints":chokepoints,
+            "critical_chokepoints":critical.get("chokepoints", []),
+            "betweenness_available":critical.get("betweenness_available", None),
+            "service_tier":service_tier,
+            # Persisted so the Episodic agent can derive paths severed by the
+            # chosen action without re-running reconnaissance.
+            "interventions":intervention_catalog,
             "threat_paths":len(paths), "business_dependencies":len(business),
             "verified_path_payload":paths,"customer_dependency_payload":business,
             "agent_reasoning":synthesize_recon_insight(paths,business,scene),
@@ -76,8 +100,17 @@ class MemoryAgent:
             if hasattr(store,"graph_scene") else
             (store.recall(tenant,scene["fingerprint"],scene.get("vulnerable"))
              if "component" in store.recall.__code__.co_varnames else store.recall(tenant,scene["fingerprint"])), "precedents")
+        # Cross-session recall of proven playbooks (Track 02). Offline doubles
+        # without the tool simply report none; nothing is fabricated.
+        tier = (semantic_key or "").split("|")
+        service_tier = tier[1] if len(tier) == 3 else "service"
+        playbooks = graph_tool(store, tenant, sid, "recall_proven_playbook",
+            {"cve_id":scene["fingerprint"], "service_tier":service_tier},
+            lambda:store.recall_proven_playbook(tenant, scene["fingerprint"], service_tier),
+            "playbooks") if hasattr(store, "recall_proven_playbook") else []
         store.handoff(tenant, sid, self.name, "recalled", {
             "fingerprint":scene["fingerprint"],"precedents":len(prior),
+            "proven_playbooks":playbooks,
             "reported_failures":sum(x["outcome"]=="unexpected_outage" for x in prior),
             "recalled_experiences":prior,
             "agent_reasoning":synthesize_memory_insight(prior,scene["fingerprint"]),
@@ -98,9 +131,18 @@ class RemediationAgent:
         paths=recon["payload"]["verified_path_payload"]
         business=recon["payload"]["customer_dependency_payload"]
         precedent=memory["payload"]["recalled_experiences"]
+        critical = recon["payload"].get("critical_chokepoints") or []
         interventions = graph_tool(store, tenant, sid, "list_candidate_interventions", {},
             lambda:store.interventions(tenant), "interventions")
         result = analyze(paths, business, interventions, precedent)
+        # Track 01: explain the cut in blast-radius terms, not just cost terms.
+        # The sentence is derived from the same Cypher cut simulation Recon ran.
+        if critical:
+            result["critical_chokepoints"] = critical
+            result["chokepoint_summary"] = severance_sentence(critical)
+        else:
+            result["critical_chokepoints"] = []
+            result["chokepoint_summary"] = ""
         # Controlled ablation: same live graph and action catalog, with the
         # recalled memory removed. This is a causal policy comparison, not a
         # claim that the operator's report is independently verified.
@@ -148,6 +190,8 @@ class RemediationAgent:
             "outcome":result["reason"],"agent_choice":result["agent_choice"],
             "remediation_reasoning":result["remediation_reasoning"],
             "agent_reasoning":result["agent_reasoning"],
+            "chokepoint_summary":result["chokepoint_summary"],
+            "critical_chokepoints":result["critical_chokepoints"],
             "memory_ablation":result["memory_ablation"],
             "min_cut":result.get("min_cut")})
         return result
@@ -156,19 +200,34 @@ class RemediationAgent:
 def investigate(store, tenant, scene, goal="minimize customer disruption"):
     if not store.ready(tenant):
         raise LookupError("Graph not seeded: run python -m maelin.seed")
-    sid = store.new_session(tenant, scene["fingerprint"])
-    if hasattr(store, "set_session_scene"):
-        store.set_session_scene(tenant, sid, scene)
-    if hasattr(store, "log_turn"):
-        store.log_turn(tenant,sid,"operator","Goal: "+goal+"; alert: "+scene.get("alert",""))
-    paths, business = ReconAgent().run(store,tenant,sid,scene)
-    memory = MemoryAgent().run(store,tenant,sid,scene)
-    result = RemediationAgent().run(store,tenant,sid,scene,goal)
-    if hasattr(store, "log_turn"):
-        picked=result.get("recommended")
-        store.log_turn(tenant,sid,"assistant",
-            "Graph-derived recommendation: "+(", ".join(picked["action_ids"]) if picked else "no complete cut"))
-    return {"session_id":sid,"scene":scene["scenario"],"paths":paths,"business_paths":business,
-            "precedents":memory,"analysis":result,"handoffs":store.history(tenant,sid),
-            "safety":"Simulation and recommendations only. Never modifies infrastructure.",
-            "scope":"Synthetic graph snapshot; bounded paths. Unknown topology is not proof of safety."}
+    with telemetry_scope() as trace:
+        sid = store.new_session(tenant, scene["fingerprint"])
+        if hasattr(store, "set_session_scene"):
+            store.set_session_scene(tenant, sid, scene)
+        if hasattr(store, "log_turn"):
+            store.log_turn(tenant,sid,"operator","Goal: "+goal+"; alert: "+scene.get("alert",""))
+        paths, business = ReconAgent().run(store,tenant,sid,scene)
+        memory = MemoryAgent().run(store,tenant,sid,scene)
+        result = RemediationAgent().run(store,tenant,sid,scene,goal)
+        if hasattr(store, "log_turn"):
+            picked=result.get("recommended")
+            store.log_turn(tenant,sid,"assistant",
+                "Graph-derived recommendation: "+(", ".join(picked["action_ids"]) if picked else "no complete cut"))
+        # Evidence IDs are deterministic per row of FalkorDB output.
+        paths = assign_evidence_ids(paths)
+        business = assign_evidence_ids(business)
+        traversed = traversed_node_ids(paths)
+        subject = {
+            "recommended": result.get("recommended"),
+            # Only chokepoints that actually sever a modeled route are cited.
+            "critical_chokepoints": [c for c in (result.get("critical_chokepoints") or [])
+                                     if int(c.get("paths_severed") or 0) > 0],
+        }
+        check = verify_agent_remediation(subject, traversed, paths)
+        check["traversed_nodes"] = traversed
+        return {"session_id":sid,"scene":scene["scenario"],"paths":paths,"business_paths":business,
+                "precedents":memory,"analysis":result,"handoffs":store.history(tenant,sid),
+                "hallucination_check":check,
+                "telemetry_trace":list(trace),
+                "safety":"Simulation and recommendations only. Never modifies infrastructure.",
+                "scope":"Synthetic graph snapshot; bounded paths. Unknown topology is not proof of safety."}

@@ -305,6 +305,23 @@ select option,
 .proof svg { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--safe); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .proof b { color: var(--text); font-weight: 600; }
 .proof .mono { color: var(--text-3); margin-left: auto; font-size: 10px; }
+/* Plan-level graph proof: citations verified against FalkorDB-returned nodes. */
+.proof.graph-proof { margin-top: 2px; flex-wrap: wrap; row-gap: 6px; }
+.proof.graph-proof .ev { font: 600 9.5px var(--mono); color: #a9f2da; padding: 1px 6px; border-radius: 999px; border: 1px solid rgba(62,230,176,.3); background: rgba(62,230,176,.06); }
+.proof.graph-proof.bad { background: rgba(255,107,91,.05); border-color: rgba(255,107,91,.25); }
+.proof.graph-proof.bad svg { stroke: var(--threat); }
+.verdict { font-size: 12px; line-height: 1.55; color: var(--text); padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,107,91,.18); background: rgba(255,107,91,.045); }
+.verdict b, .verdict .mono { color: #ffb3a8; }
+.meter-mini { width: 46px; height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.meter-mini i { display: block; height: 100%; background: linear-gradient(90deg, var(--threat), var(--warn)); border-radius: 2px; transform-origin: left; animation: grow .9s var(--ease) both; }
+/* FalkorDB execution trace drawer */
+.trace-card .li { align-items: start; }
+.trace-row .t { font-size: 11.5px; }
+.trace-row .s { font-size: 10.5px; color: var(--text-3); }
+.cypher-detail { margin-top: 4px; }
+.cypher-detail summary { cursor: pointer; font: 500 10px var(--mono); color: var(--text-3); }
+.cypher-detail summary:hover { color: var(--text-2); }
+.cypher-detail pre { margin-top: 6px; white-space: pre-wrap; word-break: break-word; font: 10.5px/1.5 var(--mono); color: var(--text-2); background: #0a0b0f; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; max-height: 180px; overflow: auto; }
 
 .plan-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
 .plan-actions span { font-size: 11px; color: var(--text-2); display: flex; gap: 6px; }

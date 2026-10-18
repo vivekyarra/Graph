@@ -13,12 +13,17 @@ TOOLS = {
     "inspect_attack_paths": ("paths", "Read graph-derived incident attack routes"),
     "inspect_business_dependencies": ("dependency_paths", "Read graph-derived customer impact"),
     "recall_incident_outcomes": ("precedents", "Read graph-linked prior incident experience"),
+    "recall_proven_playbook": ("playbooks", "Read cross-session proven playbooks ranked by usage and MTTR"),
+    "find_critical_chokepoints": ("chokepoints", "Read betweenness and attack-path severance per service"),
     "list_candidate_interventions": ("interventions", "Read graph-derived action catalog"),
 }
 ALLOWED = {
-    "recon": ("inspect_attack_paths", "inspect_business_dependencies"),
-    "memory": ("recall_incident_outcomes", "inspect_business_dependencies"),
-    "remediation": ("list_candidate_interventions", "inspect_business_dependencies"),
+    "recon": ("inspect_attack_paths", "inspect_business_dependencies",
+              "find_critical_chokepoints"),
+    "memory": ("recall_incident_outcomes", "inspect_business_dependencies",
+               "recall_proven_playbook"),
+    "remediation": ("list_candidate_interventions", "inspect_business_dependencies",
+                    "find_critical_chokepoints"),
 }
 
 
@@ -38,6 +43,12 @@ def reason_with_tools(role, store, tenant, session_id, scene, evidence):
         "inspect_business_dependencies": {},
         "recall_incident_outcomes": {"fingerprint":scene["fingerprint"],
                                      "semantic_key":scene.get("semantic_key") or ""},
+        "recall_proven_playbook": {"cve_id":scene["fingerprint"],
+                                   "service_tier":(scene.get("semantic_key") or "").split("|")[1]
+                                                  if (scene.get("semantic_key") or "").count("|") == 2
+                                                  else "service"},
+        "find_critical_chokepoints": {"vulnerable":scene["vulnerable"],
+                                      "source":scene["source"], "target":scene["target"]},
         "list_candidate_interventions": {},
     }
     direct = {
@@ -45,6 +56,12 @@ def reason_with_tools(role, store, tenant, session_id, scene, evidence):
         "inspect_business_dependencies": lambda:store.business_paths(tenant),
         "recall_incident_outcomes": lambda:store.recall(tenant, scene["fingerprint"],
                                                          scene.get("semantic_key")),
+        "recall_proven_playbook": lambda:store.recall_proven_playbook(
+            tenant, scene["fingerprint"],
+            (scene.get("semantic_key") or "").split("|")[1]
+            if (scene.get("semantic_key") or "").count("|") == 2 else "service"),
+        "find_critical_chokepoints": lambda:store.critical_chokepoints(
+            tenant, scene["vulnerable"], scene["source"], scene["target"])["chokepoints"],
         "list_candidate_interventions": lambda:store.interventions(tenant),
     }
     catalog = [{"type":"function","function":{
