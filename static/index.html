@@ -61,14 +61,14 @@ select option,
   <section class="canvas" id="canvas">
     <svg id="graph" role="img" aria-label="Infrastructure and attack graph"></svg>
 
-    <div class="hud hud-tl">
+    <div class="hud hud-tl" id="intel"></div>
+    <div class="hud hud-tr">
       <div class="legend">
         <span><i class="lg lg-threat"></i>attack route</span>
         <span><i class="lg lg-dep"></i>customer dependency</span>
         <span><i class="lg lg-cut"></i>cut</span>
       </div>
     </div>
-    <div class="hud hud-tr" id="intel"></div>
 
     <nav class="rail" id="rail" aria-label="Progress">
       <span class="rail-ink"></span>

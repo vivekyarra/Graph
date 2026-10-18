@@ -332,3 +332,19 @@ def test_seed_tenant_accepts_store_instance():
     mock_store = MockStore()
     seed_tenant("alpha", reset=True, store=mock_store)
     assert seeded == [("alpha", True)]
+
+
+def test_hud_layout_intel_left_legend_right():
+    index_html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    cockpit_css = (ROOT / "static" / "cockpit.css").read_text(encoding="utf-8")
+
+    # Verify #intel is in hud-tl (top-left) to avoid overlapping graph nodes
+    assert 'class="hud hud-tl" id="intel"' in index_html
+    # Verify .legend is in hud-tr (top-right)
+    assert '<div class="hud hud-tr">' in index_html
+    assert '<div class="legend">' in index_html
+
+    # Verify CSS alignment
+    assert ".hud-tl { top: 16px; left: 18px; flex-direction: column; align-items: flex-start; }" in cockpit_css
+    assert ".hud-tr { top: 16px; right: 18px; align-items: center; }" in cockpit_css
+

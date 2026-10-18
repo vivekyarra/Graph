@@ -96,8 +96,8 @@ svg { display: block; }
 #graph { position: absolute; inset: 0; width: 100%; height: 100%; }
 
 .hud { position: absolute; z-index: 2; display: flex; gap: 8px; }
-.hud-tl { top: 16px; left: 18px; }
-.hud-tr { top: 14px; right: 16px; flex-direction: column; align-items: flex-end; }
+.hud-tl { top: 16px; left: 18px; flex-direction: column; align-items: flex-start; }
+.hud-tr { top: 16px; right: 18px; align-items: center; }
 .legend { display: flex; gap: 14px; color: var(--text-3); font-size: 11.5px; }
 .legend span { display: flex; align-items: center; gap: 6px; }
 .lg { width: 16px; height: 2px; border-radius: 2px; display: inline-block; }
@@ -105,7 +105,7 @@ svg { display: block; }
 .lg-dep { background: repeating-linear-gradient(90deg, var(--text-3) 0 3px, transparent 3px 6px); }
 .lg-cut { background: var(--safe); }
 .chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: rgba(12,14,19,.7); border: 1px solid var(--line); backdrop-filter: blur(14px); font-size: 11.5px; color: var(--text-2); white-space: nowrap; animation: rise .6s var(--ease) both; transition: border-color .25s, transform .35s var(--spring); }
-.chip:hover { border-color: var(--line-2); transform: translateX(-2px); }
+.chip:hover { border-color: var(--line-2); transform: translateX(2px); }
 .chip b { color: var(--text); font-weight: 600; }
 .chip .algo { font: 500 10px var(--mono); color: var(--text-3); padding-left: 8px; border-left: 1px solid var(--line); }
 .chip.c-safe b { color: var(--safe); } .chip.c-threat b { color: var(--threat); } .chip.c-mem b { color: var(--memory); }
@@ -396,7 +396,7 @@ select option,
   .panel { border-left: 0; border-top: 1px solid var(--line); }
   .kbd-btn span, .legend { display: none; }
   .rail { bottom: 10px; } .rail button { padding: 6px 9px 6px 6px; font-size: 0; gap: 0; } .rail button b { font-size: 10.5px; }
-  .hud-tr { display: none; }
+  .hud-tl, .hud-tr { display: none; }
   .toasts { left: 50%; bottom: 56%; }
   .bar { gap: 10px; padding: 0 10px; }
   .live { padding: 6px 8px; } #liveText { display: none; }
