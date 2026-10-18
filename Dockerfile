@@ -3,6 +3,7 @@ WORKDIR /app
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 ENV MAELIN_ENABLE_DEMO_MUTATIONS=1
+ENV MAELIN_AGENT_TOOLS=mcp
 COPY maelin /app/maelin
 COPY data /app/data
 COPY static /app/static

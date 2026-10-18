@@ -32,7 +32,7 @@ MAELIN is an incident-response agent team whose only shared brain is **FalkorDB*
 | 6 | The operator reports the outcome. It becomes an episode **and** a postmortem document; the next session picks a different plan | Memory graph writes + Company Brain documents |
 | 7 | Anyone can ask "is it safe to quarantine auth-service?" and get an answer **with sources**: runbooks, postmortems, owners, on-call, decisions | **Full-text index** (`db.idx.fulltext.queryNodes`) + ownership/decision traversal |
 
-Agents never pass state in Python. Each specialist reads the previous one's work from immutable `(:Session)-[:HAS_HANDOFF]->(:Handoff)` nodes, and every graph read goes through **real MCP stdio tool calls** (`maelin/mcp_server.py`, nine bounded tools). Remove FalkorDB and nothing works: the API fails closed with HTTP 503.
+Agents never pass state in Python. Each specialist reads the previous one's work from immutable `(:Session)-[:HAS_HANDOFF]->(:Handoff)` nodes, and every graph read goes through **real MCP stdio tool calls** (`maelin/mcp_server.py`, 11 typed, parameterized tools). Remove FalkorDB and nothing works: the API fails closed with HTTP 503.
 
 ---
 
@@ -111,7 +111,7 @@ WITH paths, size(paths) AS total
 UNWIND paths AS p UNWIND nodes(p)[1..-1] AS n
 RETURN n.id, count(*) AS routes, total ORDER BY routes DESC
 ```
-plus `CALL algo.betweenness({nodeLabels:['Asset'], relationshipTypes:['CAN_PIVOT'], samplingSeed:42})`.
+plus `CALL algo.betweenness({nodeLabels:['Asset'], relationshipTypes:['CAN_PIVOT'], samplingSize:4096, samplingSeed:42})`.
 
 ### 4. Customer dependency and blast radius (`store.py`)
 ```cypher
@@ -153,19 +153,47 @@ Ownership is the `(:Team)-[:OWNS]->(:Asset)` subgraph; `CALL algo.pageRank('Asse
 
 ---
 
-## Quickstart (local, about two minutes)
+## Quickstart & Startup Options
 
+### Option 1: Standalone Demo Container (All-in-One FalkorDB + App)
+Spins up FalkorDB and the FastAPI application in a single container with synthetic tenants (`alpha`, `beta`) auto-seeded on boot:
+```bash
+docker build -f Dockerfile.demo -t maelin-demo .
+docker run -p 8000:8000 -e MAELIN_PUBLIC_DEMO=1 maelin-demo
+```
+Access the interactive cockpit at **http://localhost:8000**.
+
+### Option 2: Docker Compose (Dedicated FalkorDB + App Services)
+Launches the official FalkorDB service and builds the application container with MCP stdio tools enabled:
 ```bash
 docker compose up -d --build
 docker compose exec app python -m maelin.seed --tenant alpha
 docker compose exec app python -m maelin.seed --tenant beta
 ```
-Open **http://localhost:8000**. FalkorDB Browser: http://localhost:3000.
+Access the cockpit at **http://localhost:8000** and the FalkorDB Browser at **http://localhost:3000**.
 
-Single-container demo (FalkorDB and the app in one image, auto-seeded):
+### Option 3: Local Python Virtual Environment
+Run directly on the host against a local or containerized FalkorDB instance:
 ```bash
-docker build -f Dockerfile.demo -t maelin-demo . && docker run -p 8000:8000 -e MAELIN_PUBLIC_DEMO=1 maelin-demo
+# 1. Start FalkorDB container (if not already running)
+docker run -d -p 6379:6379 -p 3000:3000 --name falkordb falkordb/falkordb:latest
+
+# 2. Create and activate a Python 3.11+ virtual environment
+python -m venv .venv
+# On Linux/macOS:
+source .venv/bin/activate
+# On Windows PowerShell:
+.\.venv\Scripts\activate
+
+# 3. Install dependencies and seed demo graphs
+pip install -r requirements.txt
+python -m maelin.seed --tenant alpha
+python -m maelin.seed --tenant beta
+
+# 4. Start the FastAPI server
+uvicorn maelin.api:api --host 0.0.0.0 --port 8000
 ```
+Access the cockpit at **http://localhost:8000**.
 
 ### Interactive Verification Walkthrough (60-Second Flow)
 1. **Investigate** (or press ↵): watch the agents and MCP calls, then hover **Future A** and **Future B** to preview them on the graph.
@@ -176,26 +204,61 @@ docker build -f Dockerfile.demo -t maelin-demo . && docker run -p 8000:8000 -e M
 
 Keyboard: `⌘K` commands · `↵` investigate · `1`/`2`/`3` tabs · `/` ask the brain · `Esc` clear.
 
-### Deployment and security
-* Remote deployments set `MAELIN_OPERATOR_TOKEN`; all graph reads and writes require the `x-maelin-operator-token` header (constant-time compare, no well-known bypass tokens).
-* `MAELIN_PUBLIC_DEMO=1` allows tokenless access **only** to the synthetic `alpha`/`beta` tenants, for a hosted public demo. Uploads (new tenants) always need the token.
-* Render Deployment ([maelin-graph-hacks-demo](https://maelin-graph-hacks-demo.onrender.com)) + FalkorDB Cloud: see [docs/deployment.md](docs/deployment.md) (`FALKOR_HOST`, `FALKOR_PORT`, `FALKOR_PASSWORD`, `FALKOR_SSL=1`).
-* Optional LLM layer (`OPENAI_API_KEY` / `GEMINI_API_KEY` / Ollama via `MAELIN_LLM_BASE_URL`): models may only choose among graph-verified plans and read-only tools. They never write Cypher or execute actions.
+---
+
+## Deployment & Security Invariants
+
+* **Constant-Time Operator Authentication**: Remote deployments configure `MAELIN_OPERATOR_TOKEN`. Every graph operation requires the `x-maelin-operator-token` header, verified via `hmac.compare_digest` to eliminate timing side-channel attacks. Well-known tokens (`demo`, `admin`, `judge`) are strictly rejected when a token is configured.
+* **Public Demo Boundary**: Setting `MAELIN_PUBLIC_DEMO=1` permits tokenless access **exclusively** to the synthetic demo tenants (`alpha` and `beta`). Custom tenant ingestion or scenario uploads (`/__upload__`) always require valid operator credentials.
+* **Strict Tenant Catalog Segregation**: Tenant identifiers are strictly validated against `^[a-z][a-z0-9_-]{0,31}$`. Each tenant is isolated into discrete FalkorDB graphs (`maelin_{tenant}_topology` and `maelin_{tenant}_memory`), mathematically preventing cross-tenant information leakage.
+* **Fail-Closed Runtime Architecture**: When FalkorDB is unreachable, all graph-dependent endpoints immediately return `HTTP 503 Service Unavailable`. MAELIN contains zero in-memory or relational graph fallbacks in production runtime code.
+* **Bounded MCP Tool Boundary**: The FastMCP server (`maelin/mcp_server.py`) defines 11 typed, parameterized tools with scalar arguments. It exposes no arbitrary Cypher execution tools (`no execute_cypher`, `no query_write`), preventing model hallucinations from executing unsanctioned database operations.
+* **Counterfactual Clone Lifecycle**: Simulations occur exclusively on temporary database clones (`maelin_{tenant}_sim_{uuid}`) created via `Graph.copy()` and deallocated in an unconditional `try...finally` block, ensuring operational graphs remain completely immutable.
+* **Production Deployment**: Pre-configured for Render deployment via `render.yaml` and `Dockerfile.demo` ([Live Demo](https://maelin-graph-hacks-demo.onrender.com)). External FalkorDB Cloud configurations are supported via `FALKOR_HOST`, `FALKOR_PORT`, `FALKOR_PASSWORD`, and `FALKOR_SSL=1`.
+* **Advisory LLM Decoupling**: Optional language models (`OPENAI_API_KEY` / `GEMINI_API_KEY` / Ollama via `MAELIN_LLM_BASE_URL`) operate strictly in an advisory capacity over graph-verified candidates. When unconfigured, MAELIN operates deterministically via native graph algorithms.
 
 ---
 
-## Tests and verification
+## Tests and Empirical Verification
 
 ```bash
+# Install development dependencies
 pip install -r requirements-dev.txt
-python -m pytest -q                                # offline suite (88 tests)
-FALKOR_INTEGRATION=1 python -m pytest -q           # + live FalkorDB suites (101 tests)
-python -m maelin.verify --output verification-proof.json  # reproducible cold → replay → memory → drift proof
-python tests/e2e_real_browser.py                   # real Chromium journey against the running app
-```
-CI (`.github/workflows`) runs all of the above against a real FalkorDB container and uploads the proof JSON, screenshots and browser traces as artifacts. This includes a property-based oracle over 5,000 random graphs, min-cut optimality proofs, vector-memory validation, and Company Brain knowledge traversals.
 
-For the formal evaluation methodology, proofs, and architecture FAQ, see the [System Verification & Evaluation Guide](docs/evaluation_guide.md). For development setup and contribution standards, see [CONTRIBUTING.md](CONTRIBUTING.md). For security invariants, see [SECURITY.md](SECURITY.md).
+# 1. Execute offline test suite (83 passed, 13 skipped live integration, 0 failures)
+python -m pytest -q
+
+# 2. Execute full suite with live FalkorDB integration (all 96 tests)
+FALKOR_INTEGRATION=1 python -m pytest -q
+
+# 3. Run empirical cold-start -> replay -> memory adaptation proof
+python -m maelin.verify --output verification-proof.json
+
+# 4. Run headless Chromium E2E browser journey (CLS = 0, accessibility verification)
+python tests/e2e_real_browser.py
+```
+
+### Automated Test Suite Inventory (96 Tests across 14 Modules)
+| Test Module | Tests | Focus Area |
+|---|---|---|
+| `test_invariants.py` | 6 | Verifies zero in-memory fallback graphs in runtime and absence of arbitrary Cypher tools in MCP server. |
+| `test_hardening.py` | 9 | Verifies constant-time token authentication, public demo scoping, tenant parameterization, and query bounds. |
+| `test_simulation.py` | 7 | Verifies `Graph.copy()` lifecycle, clone namespacing, `try...finally` deletion, and live graph immutability. |
+| `test_logic.py` | 10 | Verifies deterministic Pareto optimization kernel and candidate cut evaluation. |
+| `test_stress.py` | 1 | Property-based oracle over 5,000 synthetic random DAGs verifying Cypher correctness against mathematical traversal oracle. |
+| `test_upgrades.py` | 12 | Verifies `algo.maxFlow`, `algo.pageRank`, `algo.betweenness`, and vector index schemas. |
+| `test_judge_proofs.py` | 8 | Validates cold-start threat reconnaissance, memory adaptation, and counterfactual simulation proofs. |
+| `test_agents.py` | 4 | Verifies multi-agent pipeline separation and durable graph handoff persistence. |
+| `test_brain_offline.py` | 8 | Verifies Company Brain full-text search, asset ownership queries, and document provenance. |
+| `test_incident_selection.py` | 6 | Validates scenario selection and graph metadata context. |
+| `test_scenario_upload.py` | 9 | Verifies custom scenario upload validation and schema enforcement. |
+| `test_reasoner.py` | 3 | Verifies graceful degradation when LLM is unavailable and fallback advisory synthesis. |
+| `test_live_falkordb.py` | 6 | Live FalkorDB Cypher traversal, algorithm execution, and clone lifecycle (gated on `FALKOR_INTEGRATION=1`). |
+| `test_live_graph_intel.py` | 7 | Live vector index search, semantic recall, and Company Brain full-text search (gated on `FALKOR_INTEGRATION=1`). |
+
+CI (`.github/workflows/falkordb-integration.yml`) executes the entire suite against an official FalkorDB container and publishes verification proofs, screenshots, and browser traces as workflow artifacts.
+
+For formal mathematical proofs and evaluation methodology, see the [System Verification & Evaluation Guide](docs/evaluation_guide.md). For development setup and contribution standards, see [CONTRIBUTING.md](CONTRIBUTING.md). For security policies, see [SECURITY.md](SECURITY.md).
 
 All data is synthetic. MAELIN never touches real infrastructure; recommendations are bounded to the modeled graph and are not a real-world safety certificate.
 
