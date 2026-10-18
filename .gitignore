@@ -15,3 +15,7 @@ playwright-report/
 Thumbs.db
 .venv/
 .claude/
+.vercel/
+build/
+dist/
+*.egg-info/
