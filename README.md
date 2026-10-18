@@ -1,9 +1,16 @@
-# MAELIN: see what breaks before you fix it
+# MAELIN
 
-**Graph Hacks 2026 (WeMakeDevs × FalkorDB)**
-**Tracks entered:** Track 01 (Agents That Act on Connected Data), Track 02 (Agent Memory and Coordination), Track 03 (Company Brain)
+### Graph-Native Counterfactual Incident Response & Multi-Agent Memory Engine
 
-> **AI Assistance & Verification Disclosure:** AI coding assistants were used for UI scaffolding, boilerplate, refactoring and test-harness drafting. The graph data model, every Cypher query, the counterfactual Pareto kernel (`logic.py`), the `Graph.copy()` replay mechanics and the min-cut / memory designs were reviewed, verified and property-tested (`test_invariants.py`, live FalkorDB suites) by Team Pied-Piper, who can explain every query and decision.
+[![CI Verification](https://github.com/vivekyarra/Graph/actions/workflows/falkordb-integration.yml/badge.svg)](https://github.com/vivekyarra/Graph/actions)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Database: FalkorDB](https://img.shields.io/badge/Database-FalkorDB-FF4F00.svg)](https://www.falkordb.com/)
+[![Protocol: Model Context Protocol](https://img.shields.io/badge/Protocol-MCP-8A2BE2.svg)](https://modelcontextprotocol.io/)
+
+**Simulate before you remediate.** Zero in-memory state, bounded Cypher provenance, provable min-cut isolation, and multi-tenant causal memory powered by native **FalkorDB** graph algorithms.
+
+[Live Interactive Cockpit](https://graph-golden-state-warriors.vercel.app) • [System Verification Guide](docs/evaluation_guide.md) • [Deployment Docs](docs/deployment.md) • [Contributing](CONTRIBUTING.md)
 
 ---
 
@@ -191,3 +198,17 @@ CI (`.github/workflows`) runs all of the above against a real FalkorDB container
 For the formal evaluation methodology, proofs, and architecture FAQ, see the [System Verification & Evaluation Guide](docs/evaluation_guide.md). For development setup and contribution standards, see [CONTRIBUTING.md](CONTRIBUTING.md). For security invariants, see [SECURITY.md](SECURITY.md).
 
 All data is synthetic. MAELIN never touches real infrastructure; recommendations are bounded to the modeled graph and are not a real-world safety certificate.
+
+---
+
+## Project Context & Compliance Disclosures
+
+### Track & Architecture Mapping
+MAELIN was developed for **Graph Hacks 2026 (WeMakeDevs × FalkorDB)**, addressing three core technical capability domains:
+* **Track 01: Agents That Act on Connected Data** — Multi-hop Cypher traversals (`nodes(p)`, `relationships(p)`), native `algo.maxFlow` min-cut, and `algo.pageRank` dependency centrality.
+* **Track 02: Agent Memory and Coordination** — Episodic, semantic, and procedural memory graphs, zero-in-memory handoffs, and tenant-isolated causal policy ablation.
+* **Track 03: Company Brain** — Unified enterprise knowledge graph mapping services, revenue flows, and engineering teams with cited natural-language retrieval.
+
+### AI Assistance & Verification Disclosure
+In accordance with open-source hackathon disclosure rules: AI coding assistants were used for UI scaffolding, boilerplate generation, and test-harness drafting. The graph data model, every Cypher query, the counterfactual Pareto kernel (`logic.py`), the `Graph.copy()` replay mechanics and the min-cut / memory designs were reviewed, verified and property-tested (`test_invariants.py`, live FalkorDB suites) by Team Pied-Piper, who can explain every query and decision.
+
