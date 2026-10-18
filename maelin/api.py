@@ -12,16 +12,13 @@ from .store import Store
 from .seed import dataset
 from .incident import select_scene
 from .schema import validate_dataset
+from contextlib import asynccontextmanager
 from .agents import investigate
 from .simulator import run_simulation
 
-api = FastAPI(title="MAELIN | Graph-native Incident Time Machine",version="0.1.0")
-STATIC = Path(__file__).resolve().parent.parent / "static"
-api.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
-
-@api.on_event("startup")
-def warm_mcp_session():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Start the persistent MCP graph-tool server in the background."""
     if os.getenv("MAELIN_AGENT_TOOLS", "direct") == "mcp":
         import threading
@@ -32,6 +29,12 @@ def warm_mcp_session():
             except Exception:
                 pass  # The first investigation retries and reports the failure.
         threading.Thread(target=warm, daemon=True).start()
+    yield
+
+
+api = FastAPI(title="MAELIN | Graph-native Incident Time Machine", version="0.1.0", lifespan=lifespan)
+STATIC = Path(__file__).resolve().parent.parent / "static"
+api.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 
 @lru_cache(maxsize=1)
