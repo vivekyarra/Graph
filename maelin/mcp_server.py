@@ -55,5 +55,32 @@ def get_team_ownership(tenant: str = "alpha", asset_id: str = "") -> dict:
     return {"ownership": store().team_ownership(tenant, asset_id or None)}
 
 
+@mcp.tool()
+def compute_min_cut(tenant: str = "alpha", vulnerable: str = "auth-service",
+                    target: str = "customer-db") -> dict:
+    """Minimum pivot cut between a compromised asset and a target via FalkorDB algo.maxFlow."""
+    return store().min_cut(tenant, vulnerable, target)
+
+
+@mcp.tool()
+def find_attack_chokepoints(tenant: str = "alpha", source: str = "", target: str = "") -> dict:
+    """Rank assets by share of entry->target attack routes through them, plus algo.betweenness."""
+    return {"chokepoints": store().chokepoints(tenant, source or None, target or None)}
+
+
+@mcp.tool()
+def ask_company_brain(tenant: str = "alpha", question: str = "Who owns auth-service?") -> dict:
+    """Answer with sources: full-text index over documents plus ownership/decision traversal."""
+    from .brain import ask
+    return ask(store(), tenant, question[:300])
+
+
+@mcp.tool()
+def get_asset_context(tenant: str = "alpha", asset_id: str = "auth-service") -> dict:
+    """Owners, on-call people, documents, decisions and customer blast radius for one asset."""
+    from .brain import asset_context
+    return asset_context(store(), tenant, asset_id)
+
+
 if __name__ == "__main__":
     mcp.run()

@@ -77,7 +77,7 @@ def run_simulation(store, tenant, session_id, scene, action_ids):
                       "remaining_routes":len(remaining),"remaining_paths":remaining,
                       "affected_flows":sorted(lost_flows),
                       "modeled_disruption_cost":sum(values[f] for f in lost_flows)}
-        result.update({"action_ids":action_ids,"simulation":"FalkorDB clone: actual Cypher DELETE + re-traversal",
+        result.update({"action_ids":action_ids,"clone_graph":graph_name,"simulation":"FalkorDB clone: actual Cypher DELETE + re-traversal",
             "boundary":"Synthetic graph, bounded to 7 hops. No production infrastructure changed; not a real-world safety certificate."})
     finally:
         # Do not leave per-session topology clones holding sensitive data.

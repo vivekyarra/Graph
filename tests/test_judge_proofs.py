@@ -87,11 +87,13 @@ def test_graph_write_routes_blocked_without_operator_even_if_demo_toggle_set(mon
 
 
 def test_ui_exposes_memory_ablation_and_evidence_disclaimer():
-    ui=(Path(__file__).parents[1]/'static'/'index.html').read_text(encoding="utf-8")
+    root=Path(__file__).parents[1]/'static'
+    ui=(root/'index.html').read_text(encoding="utf-8")+(root/'cockpit.js').read_text(encoding="utf-8")
     assert 'memory_ablation' in ui
     assert 'Without memory' in ui and 'With memory' in ui
     assert 'reports are not independent forensic proof' in ui
     assert 'operatorToken' in ui
+    assert 'algo.maxFlow' in ui and '/api/brain/ask' in ui
     assert 'handoffSummary' in ui
     assert 'Inspect immutable graph handoff evidence' in ui
 

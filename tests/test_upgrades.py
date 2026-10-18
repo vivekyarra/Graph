@@ -209,6 +209,8 @@ def test_mcp_server_exports_all_required_tools():
 
 def test_api_reset_demo_endpoint(monkeypatch):
     from maelin.api import api
+    monkeypatch.delenv("MAELIN_OPERATOR_TOKEN", raising=False)
+    monkeypatch.setenv("MAELIN_LOCAL_DEMO", "1")
 
     seeded = []
     class MockStore:
@@ -218,7 +220,7 @@ def test_api_reset_demo_endpoint(monkeypatch):
     monkeypatch.setattr("maelin.api.store", lambda: MockStore())
     client = TestClient(api)
 
-    resp = client.post("/api/demo/reset", json={"tenant": "alpha"}, headers={"x-maelin-operator-token": "demo"})
+    resp = client.post("/api/demo/reset", json={"tenant": "alpha"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "reset_successful"
@@ -228,6 +230,8 @@ def test_api_reset_demo_endpoint(monkeypatch):
 
 def test_api_centrality_and_teams_endpoints(monkeypatch):
     from maelin.api import api
+    monkeypatch.delenv("MAELIN_OPERATOR_TOKEN", raising=False)
+    monkeypatch.setenv("MAELIN_LOCAL_DEMO", "1")
 
     class MockStore:
         def compute_asset_centrality(self, tenant):
@@ -239,13 +243,13 @@ def test_api_centrality_and_teams_endpoints(monkeypatch):
     client = TestClient(api)
 
     # Test centrality endpoint
-    resp_cent = client.get("/api/centrality?tenant=alpha", headers={"x-maelin-operator-token": "demo"})
+    resp_cent = client.get("/api/centrality?tenant=alpha")
     assert resp_cent.status_code == 200
     assert "centrality" in resp_cent.json()
     assert resp_cent.json()["centrality"][0]["asset_id"] == "auth-service"
 
     # Test teams endpoint
-    resp_teams = client.get("/api/teams?tenant=alpha", headers={"x-maelin-operator-token": "demo"})
+    resp_teams = client.get("/api/teams?tenant=alpha")
     assert resp_teams.status_code == 200
     assert "ownership" in resp_teams.json()
     assert resp_teams.json()["ownership"][0]["team_id"] == "secops"
@@ -268,12 +272,11 @@ def test_ui_contains_reset_button_and_wiring():
     cockpit_js = (ROOT / "static" / "cockpit.js").read_text(encoding="utf-8")
 
     assert 'id="resetDemo"' in index_html
-    assert "Reset Demo State" in index_html
-    assert "resetDemoState" in index_html
-    assert "/api/demo/reset" in index_html
-    assert "resetDemo" in cockpit_js
-    assert "hudWired" in index_html
+    assert "Reset demo state" in index_html
+    assert "resetDemoState" in cockpit_js
+    assert "/api/demo/reset" in cockpit_js
     assert "hudWired" in cockpit_js
+    assert 'src="/assets/cockpit.js"' in index_html
 
 
 def test_provenance_formatter_handles_zero_id_and_labels_and_relation():

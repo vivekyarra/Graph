@@ -20,6 +20,20 @@ STATIC = Path(__file__).resolve().parent.parent / "static"
 api.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 
+@api.on_event("startup")
+def warm_mcp_session():
+    """Start the persistent MCP graph-tool server in the background."""
+    if os.getenv("MAELIN_AGENT_TOOLS", "direct") == "mcp":
+        import threading
+        from .mcp_client import _SESSION
+        def warm():
+            try:
+                _SESSION.ensure()
+            except Exception:
+                pass  # The first investigation retries and reports the failure.
+        threading.Thread(target=warm, daemon=True).start()
+
+
 @lru_cache(maxsize=1)
 def store():
     return Store(os.getenv("FALKOR_HOST","localhost"),
@@ -61,21 +75,28 @@ class DemoReset(BaseModel):
 
 
 
-def require_operator(request: Request):
-    """Fail closed for all graph-writing APIs except explicit local demo mode or demo token.
+DEMO_TENANTS = {"alpha", "beta"}
 
-    For remote deployments configure MAELIN_OPERATOR_TOKEN and TLS at a proxy.
-    MAELIN_LOCAL_DEMO is for loopback-only Docker Compose, never the Internet.
+
+def require_operator(request: Request, tenant: str | None = None):
+    """Fail closed for graph reads and writes unless explicitly authorized.
+
+    * MAELIN_OPERATOR_TOKEN set: the header must match it (constant time).
+    * MAELIN_PUBLIC_DEMO=1: tokenless access, but only to the synthetic demo
+      tenants, so a hosted judge demo can never touch other tenants.
+    * MAELIN_LOCAL_DEMO=1: loopback-only Docker Compose, never the Internet.
     """
     configured = os.getenv("MAELIN_OPERATOR_TOKEN", "")
     supplied = request.headers.get("x-maelin-operator-token", "")
-    if configured:
-        if hmac.compare_digest(configured, supplied) or supplied in {"demo", "judge"}:
-            return
-        raise HTTPException(403, "Operator authorization required")
-    if os.getenv("MAELIN_LOCAL_DEMO") == "1" or supplied in {"demo", "judge"}:
+    if configured and supplied and hmac.compare_digest(configured.encode(), supplied.encode()):
         return
-    raise HTTPException(403, "Graph writes disabled: configure MAELIN_OPERATOR_TOKEN")
+    if os.getenv("MAELIN_PUBLIC_DEMO") == "1" and (tenant or "alpha") in DEMO_TENANTS:
+        return
+    if configured:
+        raise HTTPException(403, "Operator authorization required")
+    if os.getenv("MAELIN_LOCAL_DEMO") == "1":
+        return
+    raise HTTPException(403, "Graph access disabled: configure MAELIN_OPERATOR_TOKEN")
 
 
 @api.get("/")
@@ -95,7 +116,7 @@ def health(tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
 def graph(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
     # Namespace isolation is not access control. Protect incident topologies
     # in remote mode using the same operator boundary as graph writes.
-    require_operator(request)
+    require_operator(request, tenant)
     try:
         return store().topology(tenant)
     except Exception as e:
@@ -104,7 +125,7 @@ def graph(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_
 
 @api.get("/api/scene")
 def scene_defaults(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
-    require_operator(request)
+    require_operator(request, tenant)
     try:
         return store().graph_scene(tenant)
     except Exception as exc:
@@ -113,7 +134,8 @@ def scene_defaults(request: Request, tenant: str = Query("alpha",pattern=r"^[a-z
 
 @api.post("/api/scenarios", status_code=201)
 def upload_scenario(req: ScenarioUpload, request: Request):
-    require_operator(request)
+    # Uploads create new tenants, so the public demo allowance never applies.
+    require_operator(request, "__upload__")
     try:
         data = validate_dataset(req.dataset)
         # Never overwrite an existing tenant. All topology remains in FalkorDB.
@@ -128,7 +150,7 @@ def upload_scenario(req: ScenarioUpload, request: Request):
 
 @api.post("/api/investigate")
 def run(req: Investigation, request: Request):
-    require_operator(request)
+    require_operator(request, req.tenant)
     try:
         graph_store = store()
         scene = select_scene(graph_store, req.tenant, req.source, req.vulnerable, req.target, req.alert)
@@ -146,7 +168,7 @@ def run(req: Investigation, request: Request):
 
 @api.post("/api/demo/simulate")
 def simulate(req: Simulation, request: Request):
-    require_operator(request)
+    require_operator(request, req.tenant)
     # This clones and MUTATES a graph, never any real infrastructure.
     if os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS", "1") != "1":
         raise HTTPException(403,"Simulation disabled; trusted demo mode only")
@@ -166,7 +188,7 @@ def simulate(req: Simulation, request: Request):
 
 @api.post("/api/outcome")
 def outcome(req: Outcome, request: Request):
-    require_operator(request)
+    require_operator(request, req.tenant)
     if req.outcome not in {"unexpected_outage","safe"}:
         raise HTTPException(422,"outcome must be 'unexpected_outage' or 'safe'")
     try:
@@ -177,7 +199,13 @@ def outcome(req: Outcome, request: Request):
         ep=store().record_outcome(req.tenant,req.session_id,scene["fingerprint"],
                                   req.action_id,req.outcome,req.cost_observed,req.note,
                                   semantic_key=scene.get("semantic_key"))
-        return {"episode_id":ep,"evidence_status":"operator_report",
+        action = next((a for a in store().interventions(req.tenant) if a["id"] == req.action_id), None)
+        postmortem = None
+        if action is not None:
+            from .brain import write_postmortem
+            postmortem = write_postmortem(store(), req.tenant, action, req.outcome, req.note,
+                                          ep, req.cost_observed)
+        return {"episode_id":ep,"evidence_status":"operator_report","postmortem_id":postmortem,
                 "note":"Future sessions consult this graph-backed reported outcome."}
     except HTTPException:
         raise
@@ -189,7 +217,7 @@ def outcome(req: Outcome, request: Request):
 
 @api.get("/api/trace/{session_id}")
 def trace(session_id:str, request: Request, tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
-    require_operator(request)
+    require_operator(request, tenant)
     try:
         return {"handoffs":store().history(tenant,session_id)}
     except Exception as e:
@@ -199,7 +227,7 @@ def trace(session_id:str, request: Request, tenant: str = Query("alpha",pattern=
 @api.get("/api/conversation/{session_id}")
 def conversation(session_id: str, request: Request,
                  tenant: str = Query("alpha",pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
-    require_operator(request)
+    require_operator(request, tenant)
     try:
         return {"turns":store().conversation(tenant,session_id)}
     except Exception as exc:
@@ -208,7 +236,7 @@ def conversation(session_id: str, request: Request,
 
 @api.post("/api/demo/inject-shadow-route")
 def inject_shadow_route(req: Investigation, request: Request):
-    require_operator(request)
+    require_operator(request, req.tenant)
     # Explicit local-demo opt-in, off by default in public deployments.
     if os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS", "1") != "1":
         raise HTTPException(403, "Synthetic injection disabled; set MAELIN_ENABLE_DEMO_MUTATIONS=1 only on a trusted demo instance")
@@ -224,7 +252,7 @@ def inject_shadow_route(req: Investigation, request: Request):
 
 @api.post("/api/demo/reset")
 def reset_demo_state(req: DemoReset, request: Request):
-    require_operator(request)
+    require_operator(request, req.tenant)
     if os.getenv("MAELIN_ENABLE_DEMO_MUTATIONS", "1") != "1":
         raise HTTPException(403, "Demo reset disabled; trusted demo mode only")
     try:
@@ -245,7 +273,7 @@ def reset_demo_state(req: DemoReset, request: Request):
 
 @api.get("/api/centrality")
 def asset_centrality(request: Request, tenant: str = Query("alpha", pattern=r"^[a-z][a-z0-9_-]{0,31}$")):
-    require_operator(request)
+    require_operator(request, tenant)
     try:
         return {"centrality": store().compute_asset_centrality(tenant)}
     except Exception as e:
@@ -255,9 +283,69 @@ def asset_centrality(request: Request, tenant: str = Query("alpha", pattern=r"^[
 @api.get("/api/teams")
 def team_ownership(request: Request, tenant: str = Query("alpha", pattern=r"^[a-z][a-z0-9_-]{0,31}$"),
                    asset_id: str | None = None):
-    require_operator(request)
+    require_operator(request, tenant)
     try:
         return {"ownership": store().team_ownership(tenant, asset_id)}
     except Exception as e:
         raise HTTPException(503, f"Could not query team ownership: {type(e).__name__}") from e
 
+
+
+TENANT_Q = Query("alpha", pattern=r"^[a-z][a-z0-9_-]{0,31}$")
+ASSET_ID = r"^[a-z0-9][a-z0-9_-]{0,79}$"
+
+
+@api.get("/api/intel")
+def graph_intel(request: Request, tenant: str = TENANT_Q,
+                vulnerable: str | None = Query(None, pattern=ASSET_ID),
+                target: str | None = Query(None, pattern=ASSET_ID)):
+    """Native FalkorDB algorithms: maxFlow min-cut, betweenness, pageRank."""
+    require_operator(request, tenant)
+    try:
+        s = store()
+        scene = s.graph_scene(tenant)
+        v, t = vulnerable or scene["vulnerable"], target or scene["target"]
+        return {"vulnerable": v, "target": t, "min_cut": s.min_cut(tenant, v, t),
+                "chokepoints": s.chokepoints(tenant),
+                "centrality": s.compute_asset_centrality(tenant)[:5]}
+    except Exception as e:
+        raise HTTPException(503, f"FalkorDB algorithm call failed: {type(e).__name__}") from e
+
+
+@api.get("/api/stats")
+def graph_stats(request: Request, tenant: str = TENANT_Q):
+    require_operator(request, tenant)
+    try:
+        return store().stats(tenant)
+    except Exception as e:
+        raise HTTPException(503, "Could not read FalkorDB statistics") from e
+
+
+class BrainQuestion(BaseModel):
+    tenant: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,31}$", default="alpha")
+    question: str = Field(min_length=2, max_length=300)
+
+
+@api.post("/api/brain/ask")
+def brain_ask(req: BrainQuestion, request: Request):
+    require_operator(request, req.tenant)
+    try:
+        from .brain import ask
+        return ask(store(), req.tenant, req.question)
+    except Exception as e:
+        raise HTTPException(503, f"Company Brain query failed: {type(e).__name__}") from e
+
+
+@api.get("/api/brain/asset/{asset_id}")
+def brain_asset(asset_id: str, request: Request, tenant: str = TENANT_Q):
+    require_operator(request, tenant)
+    import re as _re
+    if not _re.fullmatch(ASSET_ID, asset_id):
+        raise HTTPException(422, "Invalid asset id")
+    try:
+        from .brain import asset_context
+        return asset_context(store(), tenant, asset_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except Exception as e:
+        raise HTTPException(503, f"Company Brain query failed: {type(e).__name__}") from e

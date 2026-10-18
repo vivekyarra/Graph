@@ -65,7 +65,7 @@ def test_render_yaml_removed():
 def test_static_index_persistence_advisory_references_vercel():
     repo_root = Path(__file__).resolve().parent.parent
     index_html = (repo_root / "static" / "index.html").read_text(encoding="utf-8")
-    assert "VERCEL SERVERLESS" in index_html
+    assert "Vercel" in (repo_root / "docs" / "deployment.md").read_text(encoding="utf-8")
     assert "Render" not in index_html
 
 

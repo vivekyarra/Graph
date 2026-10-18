@@ -10,7 +10,12 @@ from .reasoner import reason_with_tools
 import os
 
 
-def graph_tool(store, tenant, sid, name, parameters, direct, result_key):
+def graph_tool(store, tenant, sid, name, parameters, direct, result_key, whole=False):
+    """Call a bounded graph tool over real MCP stdio (or directly in tests).
+
+    whole=True returns the complete structured tool result instead of just
+    the record list stored under result_key.
+    """
     if os.getenv("MAELIN_AGENT_TOOLS", "direct") != "mcp":
         return direct()
     from .store import Store
@@ -23,7 +28,7 @@ def graph_tool(store, tenant, sid, name, parameters, direct, result_key):
     store.handoff(tenant, sid, "mcp", "tool_called", {
         "transport":"stdio", "tool":name, "arguments":parameters,
         "returned_records":len(result[result_key])})
-    return result[result_key]
+    return result if whole else result[result_key]
 
 
 class ReconAgent:
@@ -34,7 +39,11 @@ class ReconAgent:
             lambda:store.attack_paths(tenant,scene["source"],scene["vulnerable"],scene["target"]), "paths")
         business = graph_tool(store, tenant, sid, "inspect_business_dependencies", {},
             lambda:store.business_paths(tenant), "dependency_paths")
+        chokepoints = graph_tool(store, tenant, sid, "find_attack_chokepoints",
+            {"source":scene["source"], "target":scene["target"]},
+            lambda:store.chokepoints(tenant, scene["source"], scene["target"]), "chokepoints")             if hasattr(store, "chokepoints") else []
         store.handoff(tenant, sid, self.name, "mapped", {
+            "chokepoints":chokepoints,
             "threat_paths":len(paths), "business_dependencies":len(business),
             "verified_path_payload":paths,"customer_dependency_payload":business,
             "agent_reasoning":synthesize_recon_insight(paths,business,scene),
@@ -108,6 +117,19 @@ class RemediationAgent:
             "evidence_kind": "operator_report, not independent forensic verification",
             "interpretation": "Same topology, same candidate set; only previous operator reports were removed.",
         }
+        if hasattr(store, "min_cut"):
+            cut = graph_tool(store, tenant, sid, "compute_min_cut",
+                {"vulnerable":scene["vulnerable"], "target":scene["target"]},
+                lambda:store.min_cut(tenant, scene["vulnerable"], scene["target"]), "cut_edges", whole=True)
+            rec = result["recommended"]
+            result["min_cut"] = {
+                **cut,
+                "plan_edge_cuts": len(rec["blocked_edges"]) if rec else None,
+                "plan_node_cuts": len(rec["blocked_nodes"]) if rec else None,
+                "optimal": bool(rec and not rec["blocked_nodes"] and len(rec["blocked_edges"]) == cut["max_flow"]),
+                "meaning": "Menger bound: at least max_flow independent pivots must be cut "
+                           "between the compromised asset and the target.",
+            }
         naive = next((a for a in interventions if a["id"] == "quarantine-auth"), None)
         baseline = analyze(paths, business, [naive], ()) if naive else None
         result["naive_emergency_brake"] = baseline["recommended"] if baseline else None
@@ -126,7 +148,8 @@ class RemediationAgent:
             "outcome":result["reason"],"agent_choice":result["agent_choice"],
             "remediation_reasoning":result["remediation_reasoning"],
             "agent_reasoning":result["agent_reasoning"],
-            "memory_ablation":result["memory_ablation"]})
+            "memory_ablation":result["memory_ablation"],
+            "min_cut":result.get("min_cut")})
         return result
 
 

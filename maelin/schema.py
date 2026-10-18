@@ -97,4 +97,62 @@ def validate_dataset(payload):
     for field in ("scenario", "fingerprint"):
         if not isinstance(data.get(field), str) or not 1 <= len(data[field]) <= 180:
             raise ValueError("Scenario and fingerprint must be nonempty and at most 180 characters")
+    _validate_brain(data, set(ids))
     return data
+
+
+def _text(value, limit):
+    return isinstance(value, str) and len(value) <= limit
+
+
+def _validate_brain(data, asset_ids):
+    """Optional Company Brain layer: teams, people, documents and decisions."""
+    teams = data.setdefault("teams", [])
+    people = data.setdefault("people", [])
+    documents = data.setdefault("documents", [])
+    decisions = data.setdefault("decisions", [])
+    ownership = data.setdefault("team_ownership", [])
+    for seq in (teams, people, documents, decisions, ownership):
+        if not isinstance(seq, list) or len(seq) > MAX_NODES:
+            raise ValueError("Company Brain sections must be arrays of at most 120 items")
+    team_ids = {t.get("id") for t in teams if isinstance(t, dict)}
+    if len(team_ids) != len(teams) or not all(_identifier(t) for t in team_ids):
+        raise ValueError("Team IDs must be unique identifiers")
+    for own in ownership:
+        if not isinstance(own, dict) or own.get("team") not in team_ids or own.get("asset") not in asset_ids:
+            raise ValueError("Ownership must reference a known team and asset")
+    person_ids = {p.get("id") for p in people if isinstance(p, dict)}
+    if len(person_ids) != len(people) or not all(_identifier(p) for p in person_ids):
+        raise ValueError("Person IDs must be unique identifiers")
+    for person in people:
+        if person.get("team") not in team_ids or not _text(person.get("name"), 120):
+            raise ValueError("Each person needs a name and a known team")
+        person["title"] = person.get("title", "") if _text(person.get("title", ""), 120) else ""
+        person["on_call"] = person.get("on_call") is True
+    doc_ids = set()
+    for doc in documents:
+        if not isinstance(doc, dict) or not _identifier(doc.get("id")) or doc["id"] in doc_ids:
+            raise ValueError("Document IDs must be unique identifiers")
+        doc_ids.add(doc["id"])
+        if doc.get("kind") not in {"runbook", "postmortem", "adr", "ticket", "chat"}:
+            raise ValueError("Unknown document kind")
+        if not _text(doc.get("title"), 200) or not _text(doc.get("body"), 2000):
+            raise ValueError("Invalid document title or body")
+        if not isinstance(doc.get("about", []), list) or any(a not in asset_ids for a in doc.get("about", [])):
+            raise ValueError("Documents must reference known assets")
+        if doc.get("author") not in person_ids | {None}:
+            raise ValueError("Document author must be a known person")
+        doc.setdefault("about", [])
+        doc.setdefault("created", "")
+    for dec in decisions:
+        if not isinstance(dec, dict) or not _identifier(dec.get("id")):
+            raise ValueError("Decision IDs must be identifiers")
+        if not _text(dec.get("title"), 200) or not _text(dec.get("rationale", ""), 600):
+            raise ValueError("Invalid decision text")
+        if dec.get("decided_by") not in person_ids or dec.get("source") not in doc_ids:
+            raise ValueError("Decisions must cite a known person and source document")
+        if any(a not in asset_ids for a in dec.get("about", [])):
+            raise ValueError("Decisions must reference known assets")
+        dec.setdefault("about", [])
+        dec.setdefault("rationale", "")
+        dec.setdefault("created", "")

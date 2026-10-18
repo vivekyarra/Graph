@@ -15,6 +15,9 @@ import uuid
 from pathlib import Path
 
 from .agents import investigate
+from .brain import ask, write_postmortem
+from .incident import select_scene
+from .schema import validate_dataset
 from .seed import dataset
 from .simulator import run_simulation
 from .store import Store
@@ -22,7 +25,7 @@ from .store import Store
 
 def run(store: Store) -> dict:
     tenant = "judge_" + uuid.uuid4().hex[:8]
-    data = dataset()
+    data = validate_dataset(dataset())
     started = time.monotonic()
     try:
         store.seed(tenant, data, reset=False)
@@ -44,6 +47,27 @@ def run(store: Store) -> dict:
         assert warm["analysis"]["recommended"]["action_ids"] == ["rotate-auth-credentials"]
         assert ablation["without_memory_actions"] == plan["action_ids"]
         assert len(store.history(tenant, warm["session_id"])) == 3
+        # Track 01: native algo.maxFlow proves the plan cuts the minimum number of pivots.
+        min_cut = cold["analysis"]["min_cut"]
+        assert min_cut["max_flow"] == 2 and min_cut["optimal"]
+        # Track 02: a structurally similar (not identical) incident recalls the
+        # report through the FalkorDB vector index.
+        scene = select_scene(store, tenant)
+        store.record_outcome(tenant, cold["session_id"], data["fingerprint"],
+                             "quarantine-auth", "unexpected_outage", 120,
+                             "synthetic judge harness operator report",
+                             semantic_key=scene["semantic_key"])
+        similar = select_scene(store, tenant, source="edge-gateway")
+        vector_hits = [m for m in store.recall(tenant, similar["fingerprint"], similar["semantic_key"])
+                       if m["match_type"] == "vector"]
+        assert vector_hits, "Vector index recall missing"
+        # Track 03: the report becomes a cited postmortem the Company Brain can answer from.
+        action = next(a for a in store.interventions(tenant) if a["id"] == "quarantine-auth")
+        doc = write_postmortem(store, tenant, action, "unexpected_outage", "judge harness",
+                               cold["session_id"] + ":quarantine-auth", 120)
+        brain = ask(store, tenant, "Is it safe to quarantine auth-service?")
+        assert any(s["id"] == doc for s in brain["sources"])
+        assert {"document", "ownership", "decision"} <= {s["type"] for s in brain["sources"]}
         # Topology drift makes the old once-complete action set incomplete.
         store.inject_shadow_route(tenant)
         drift = investigate(store, tenant, data)
@@ -62,6 +86,11 @@ def run(store: Store) -> dict:
             "durable_handoffs": len(cold["handoffs"]),
             "reported_outcome_evidence": "operator_report (synthetic, unverified)",
             "memory_ablation": ablation,
+            "min_cut_algo_maxflow": {"max_flow": min_cut["max_flow"], "cut_edges": min_cut["cut_edges"],
+                                     "plan_is_minimal": min_cut["optimal"]},
+            "vector_memory_recall": {"similarity": vector_hits[0]["similarity"],
+                                     "weight": vector_hits[0]["memory_weight"]},
+            "company_brain": {"sources": len(brain["sources"]), "auto_postmortem": doc},
             "after_topology_drift_routes": len(drift["paths"]),
             "old_plan_after_drift_remaining_routes": old_replay["remaining_routes"],
             "revised_plan_after_drift": drift["analysis"]["recommended"]["action_ids"],

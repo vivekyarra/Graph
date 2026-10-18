@@ -285,5 +285,165 @@
       "team": "data-infra",
       "asset": "vault-sync"
     }
+  ],
+  "people": [
+    {
+      "id": "alice-chen",
+      "name": "Alice Chen",
+      "team": "secops",
+      "title": "Identity security lead",
+      "on_call": false
+    },
+    {
+      "id": "rahul-iyer",
+      "name": "Rahul Iyer",
+      "team": "secops",
+      "title": "Detection engineer",
+      "on_call": true
+    },
+    {
+      "id": "marcus-vance",
+      "name": "Marcus Vance",
+      "team": "payments-platform",
+      "title": "Payments core lead",
+      "on_call": false
+    },
+    {
+      "id": "sofia-reyes",
+      "name": "Sofia Reyes",
+      "team": "payments-platform",
+      "title": "SRE, checkout",
+      "on_call": true
+    },
+    {
+      "id": "devon-ray",
+      "name": "Devon Ray",
+      "team": "data-infra",
+      "title": "Data infrastructure lead",
+      "on_call": false
+    },
+    {
+      "id": "mei-tanaka",
+      "name": "Mei Tanaka",
+      "team": "data-infra",
+      "title": "Database reliability engineer",
+      "on_call": true
+    }
+  ],
+  "documents": [
+    {
+      "id": "rb-auth-containment",
+      "kind": "runbook",
+      "title": "Auth service containment runbook",
+      "body": "Never quarantine auth-service during business hours: checkout, billing and sign-in all depend on it. Prefer revoking admin role assumption and cutting the vault-sync credential pivot. Escalate to Identity-SecOps on-call.",
+      "about": [
+        "auth-service",
+        "admin-role",
+        "vault-sync"
+      ],
+      "author": "alice-chen",
+      "created": "2026-08-02"
+    },
+    {
+      "id": "pm-2026-07-auth-outage",
+      "kind": "postmortem",
+      "title": "July auth quarantine caused 47 minute checkout outage",
+      "body": "An emergency quarantine of auth-service stopped a credential-stuffing attack but took down checkout and sign-in for 47 minutes. Root cause: no dependency map for the auth service. Action item: model customer dependencies in the graph before containment.",
+      "about": [
+        "auth-service",
+        "checkout",
+        "sign-in"
+      ],
+      "author": "sofia-reyes",
+      "created": "2026-07-21"
+    },
+    {
+      "id": "adr-014-vault-sync",
+      "kind": "adr",
+      "title": "ADR-014: vault-sync keeps a replication credential to customer-db",
+      "body": "Billing reconciliation requires vault-sync to replicate secrets into customer-db. Accepted risk: the credential is a lateral-movement pivot. Mitigation: the pivot permission can be revoked independently without stopping billing.",
+      "about": [
+        "vault-sync",
+        "customer-db",
+        "billing"
+      ],
+      "author": "devon-ray",
+      "created": "2026-05-11"
+    },
+    {
+      "id": "tkt-sec-2291",
+      "kind": "ticket",
+      "title": "SEC-2291: admin-role can be assumed from auth-service",
+      "body": "Detection found auth-service workloads able to assume the privileged admin-role, which has write permission on customer-db. Fix pending: scope the trust policy.",
+      "about": [
+        "auth-service",
+        "admin-role",
+        "customer-db"
+      ],
+      "author": "rahul-iyer",
+      "created": "2026-09-30"
+    },
+    {
+      "id": "chat-incident-bridge",
+      "kind": "chat",
+      "title": "#incident-bridge: credential rotation is safe for checkout",
+      "body": "Sofia: rotating both leaked service credentials takes longer but keeps checkout up. Mei: confirmed, customer-db sessions survive rotation. Marcus: approved as the default fallback.",
+      "about": [
+        "auth-service",
+        "checkout",
+        "customer-db"
+      ],
+      "author": "sofia-reyes",
+      "created": "2026-09-02"
+    },
+    {
+      "id": "rb-gateway",
+      "kind": "runbook",
+      "title": "Edge gateway isolation runbook",
+      "body": "Quarantining edge-gateway blocks all internet traffic including checkout and sign-in. Use only for active data exfiltration with no narrower cut.",
+      "about": [
+        "edge-gateway",
+        "checkout",
+        "sign-in"
+      ],
+      "author": "marcus-vance",
+      "created": "2026-06-18"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "dec-no-auth-quarantine",
+      "title": "Do not quarantine auth-service without a dependency check",
+      "rationale": "The July outage showed auth quarantine breaks checkout, billing and sign-in.",
+      "decided_by": "marcus-vance",
+      "source": "pm-2026-07-auth-outage",
+      "about": [
+        "auth-service"
+      ],
+      "created": "2026-07-24"
+    },
+    {
+      "id": "dec-rotation-fallback",
+      "title": "Credential rotation is the approved fallback containment",
+      "rationale": "Rotation keeps checkout available and cuts both credential pivots.",
+      "decided_by": "marcus-vance",
+      "source": "chat-incident-bridge",
+      "about": [
+        "auth-service",
+        "customer-db"
+      ],
+      "created": "2026-09-02"
+    },
+    {
+      "id": "dec-accept-vault-risk",
+      "title": "Accept vault-sync replication credential with revocable pivot",
+      "rationale": "Billing needs replication; the pivot permission is independently revocable.",
+      "decided_by": "devon-ray",
+      "source": "adr-014-vault-sync",
+      "about": [
+        "vault-sync"
+      ],
+      "created": "2026-05-11"
+    }
   ]
 }

@@ -47,14 +47,28 @@ def test_local_demo_explicit_opt_in(monkeypatch):
     with pytest.raises(HTTPException):require_operator(req())
 
 
-def test_demo_and_judge_tokens_allow_inspection(monkeypatch):
+def test_well_known_tokens_never_bypass_a_configured_secret(monkeypatch):
+    monkeypatch.delenv('MAELIN_PUBLIC_DEMO', raising=False)
+    monkeypatch.delenv('MAELIN_LOCAL_DEMO', raising=False)
     monkeypatch.setenv('MAELIN_OPERATOR_TOKEN','remote-secret-token')
-    require_operator(req('demo'))
-    require_operator(req('judge'))
+    for guess in ['demo', 'judge', 'admin']:
+        with pytest.raises(HTTPException) as e:
+            require_operator(req(guess))
+        assert e.value.status_code==403
+    monkeypatch.delenv('MAELIN_OPERATOR_TOKEN', raising=False)
+    with pytest.raises(HTTPException):
+        require_operator(req('demo'))
+
+
+def test_public_demo_is_scoped_to_synthetic_demo_tenants(monkeypatch):
     monkeypatch.delenv('MAELIN_OPERATOR_TOKEN', raising=False)
     monkeypatch.delenv('MAELIN_LOCAL_DEMO', raising=False)
-    require_operator(req('demo'))
-    require_operator(req('judge'))
+    monkeypatch.setenv('MAELIN_PUBLIC_DEMO','1')
+    require_operator(req(), 'alpha')
+    require_operator(req(), 'beta')
+    for tenant in ['gamma', 'ci_alpha', '__upload__']:
+        with pytest.raises(HTTPException):
+            require_operator(req(), tenant)
 
 
 class FakeGraph:

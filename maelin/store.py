@@ -11,6 +11,20 @@ from datetime import datetime, timezone
 from falkordb import FalkorDB
 
 TENANT = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+EMBED_KINDS = ("ingress", "service", "identity", "database", "business_flow")
+
+
+def incident_embedding(semantic_key):
+    """Structural incident embedding: one-hot asset kind of the entry point,
+    the compromised pivot and the target. Similar topologies land close
+    together in FalkorDB's vector index even when their IDs differ."""
+    parts = (semantic_key or "").split("|")
+    if len(parts) != 3:
+        return None
+    vec = []
+    for kind in parts:
+        vec += [1.0 if kind == k else 0.0 for k in EMBED_KINDS]
+    return vec if any(vec) else None
 
 
 def iso_now():
@@ -204,7 +218,36 @@ ORDER BY e.created DESC LIMIT 20""", {"key":semantic_key}).result_set
                           "evidence_status":r[3],"created":r[4],"episode_id":r[5],
                           "match_type":"semantic", "memory_weight":0.25}
                          for r in related if r[5] not in seen]
+            episodes += self._vector_recall(g, semantic_key, {ep["episode_id"] for ep in episodes})
         return episodes
+
+    def _vector_recall(self, graph, semantic_key, seen, k=8, min_similarity=0.6):
+        """Nearest-neighbour recall over the Episode vector index."""
+        vec = incident_embedding(semantic_key)
+        if vec is None:
+            return []
+        try:
+            rows = graph.ro_query("""CALL db.idx.vector.queryNodes('Episode', 'embedding', $k, vecf32($vec))
+YIELD node, score
+MATCH (node)-[:OBSERVED]->(a:ActionExperience)
+RETURN a.action_id, a.outcome, a.cost_observed, a.evidence_status, node.created, node.id, score""",
+                {"k":k, "vec":vec}).result_set
+        except Exception as exc:
+            # Graphs seeded before the vector index existed simply have no vectors.
+            if "index" in str(exc).lower():
+                return []
+            raise
+        out = []
+        for r in rows:
+            similarity = round(1 - float(r[6]), 3)  # cosine distance -> similarity
+            if r[5] in seen or similarity < min_similarity:
+                continue
+            seen.add(r[5])
+            out.append({"action_id":r[0], "outcome":r[1], "cost_observed":r[2],
+                        "evidence_status":r[3], "created":r[4], "episode_id":r[5],
+                        "match_type":"vector", "similarity":similarity,
+                        "memory_weight":round(0.25 * similarity, 3)})
+        return out
 
     def new_session(self, tenant, fingerprint):
         _, g = self.graphs(tenant)
@@ -318,6 +361,10 @@ MERGE (procedure)-[:SUPPORTED_BY]->(a)""",
 MERGE (pattern:SemanticPattern {key:$semantic_key})
 MERGE (pattern)-[:REMEMBERS]->(e)""",
                     {"episode":episode, "semantic_key":semantic_key})
+            vec = incident_embedding(semantic_key)
+            if vec is not None:
+                g.query("MATCH (e:Episode {id:$episode}) SET e.embedding = vecf32($vec)",
+                        {"episode":episode, "vec":vec})
         verified = g.ro_query("""MATCH (s:Session {id:$session, fingerprint:$fingerprint})
 -[:RESULTED_IN]->(e:Episode {id:$episode})-[:OBSERVED]->(a:ActionExperience)
 RETURN a.action_id, a.outcome, a.cost_observed""",
@@ -328,7 +375,7 @@ RETURN a.action_id, a.outcome, a.cost_observed""",
 
     def inject_shadow_route(self, tenant):
         """Controlled synthetic fault injection. Never modifies cloud infrastructure."""
-        if tenant not in {"alpha", "beta", "ci_alpha", "ci_beta"} and not re.fullmatch(r"judge_[0-9a-f]{8}", tenant):
+        if tenant not in {"alpha", "beta"} and not re.fullmatch(r"(ci_[a-z0-9_]{1,24}|judge_[0-9a-f]{8})", tenant):
             raise ValueError("Synthetic fault injection is restricted to demo tenants")
         if not self.ready(tenant):
             raise LookupError("Seed the demo before injecting faults")
@@ -337,10 +384,10 @@ RETURN a.action_id, a.outcome, a.cost_observed""",
 ON CREATE SET n.kind='identity', n.x=603, n.y=225, n.value=0, n.critical=false""")
         g.query("""MATCH (a:Asset {id:'auth-service'}), (b:Asset {id:'shadow-role'})
 MERGE (a)-[r:CAN_PIVOT {edge_id:'p9'}]->(b)
-ON CREATE SET r.evidence='synthetic newly-discovered privilege escalation'""")
+ON CREATE SET r.evidence='synthetic newly-discovered privilege escalation', r.cap=1""")
         g.query("""MATCH (a:Asset {id:'shadow-role'}), (b:Asset {id:'customer-db'})
 MERGE (a)-[r:CAN_PIVOT {edge_id:'p10'}]->(b)
-ON CREATE SET r.evidence='synthetic newly-discovered database path'""")
+ON CREATE SET r.evidence='synthetic newly-discovered database path', r.cap=1""")
         return {"injected_edges":["p9","p10"], "warning":"Synthetic topology modification only; previously complete plans may no longer cut every path."}
 
     def seed(self, tenant, data, reset=False):
@@ -358,9 +405,10 @@ ON CREATE SET r.evidence='synthetic newly-discovered database path'""")
                  "value":a.get("value",0),"critical":a.get("critical",False)})
         for typ, field in (("CAN_PIVOT","pivot_edges"),("DEPENDS_ON","depends_edges")):
             # Only code-owned relationship type identifiers, never untrusted strings.
+            # cap:1 gives every pivot unit capacity for algo.maxFlow min-cut proofs.
             for e in data[field]:
                 topology.query(f"""MATCH (a:Asset {{id:$source}}), (b:Asset {{id:$target}})
-CREATE (a)-[:{typ} {{edge_id:$edge_id, evidence:$evidence}}]->(b)""",
+CREATE (a)-[:{typ} {{edge_id:$edge_id, evidence:$evidence, cap:1}}]->(b)""",
                 {"source":e["from"],"target":e["to"],"edge_id":e["id"],
                  "evidence":e.get("evidence","synthetic business dependency")})
         for a in data["actions"]:
@@ -374,8 +422,149 @@ blocked_nodes:$blocked_nodes, blocked_edges:$blocked_edges, cost:$cost, note:$no
             topology.query("""MATCH (t:Team {id:$team}), (a:Asset {id:$asset})
 CREATE (t)-[:OWNS]->(a)""",
                 {"team":own["team"], "asset":own["asset"]})
+        for person in data.get("people", []):
+            topology.query("""MATCH (t:Team {id:$team})
+CREATE (p:Person {id:$id, name:$name, title:$title, on_call:$on_call})-[:MEMBER_OF]->(t)""",
+                {"id":person["id"], "name":person["name"], "team":person["team"],
+                 "title":person.get("title", ""), "on_call":bool(person.get("on_call"))})
+        for doc in data.get("documents", []):
+            self._create_document(topology, doc)
+        for dec in data.get("decisions", []):
+            topology.query("""MATCH (by:Person {id:$by}), (src:Document {id:$source})
+CREATE (d:Decision {id:$id, title:$title, rationale:$rationale, created:$created})
+CREATE (d)-[:DECIDED_BY]->(by), (d)-[:SOURCED_FROM]->(src)
+WITH d UNWIND $about AS aid MATCH (a:Asset {id:aid}) CREATE (d)-[:AFFECTS]->(a)""",
+                {"id":dec["id"], "title":dec["title"], "rationale":dec.get("rationale", ""),
+                 "created":dec.get("created", ""), "by":dec["decided_by"], "source":dec["source"],
+                 "about":dec.get("about", [])})
         topology.query("""CREATE (:GraphMetadata {
 source:$source, vulnerable:$vulnerable, target:$target,
 fingerprint:$fingerprint, scenario:$scenario})""",
             {"source":data["source"],"vulnerable":data["vulnerable"],"target":data["target"],
              "fingerprint":data["fingerprint"],"scenario":data["scenario"]})
+        self.ensure_indexes(tenant)
+
+    # ------------------------------------------------------------------
+    # Indexes: range indexes for every lookup key, full-text for the
+    # Company Brain, and a vector index for semantic incident memory.
+    # ------------------------------------------------------------------
+    VECTOR_DIM = len(EMBED_KINDS) * 3
+
+    def ensure_indexes(self, tenant):
+        topology, memory = self.graphs(tenant)
+        statements = [
+            (topology, "CREATE INDEX FOR (a:Asset) ON (a.id)"),
+            (topology, "CREATE INDEX FOR (t:Team) ON (t.id)"),
+            (topology, "CREATE INDEX FOR (p:Person) ON (p.id)"),
+            (topology, "CREATE INDEX FOR (d:Document) ON (d.id)"),
+            (topology, "CREATE INDEX FOR (i:Intervention) ON (i.id)"),
+            (topology, "CALL db.idx.fulltext.createNodeIndex('Document', 'title', 'body')"),
+            (memory, "CREATE INDEX FOR (s:Session) ON (s.id)"),
+            (memory, "CREATE INDEX FOR (e:Episode) ON (e.id)"),
+            (memory, "CREATE INDEX FOR (p:IncidentPattern) ON (p.fingerprint)"),
+            (memory, "CREATE VECTOR INDEX FOR (e:Episode) ON (e.embedding) "
+                     f"OPTIONS {{dimension:{self.VECTOR_DIM}, similarityFunction:'cosine'}}"),
+        ]
+        for graph, statement in statements:
+            try:
+                graph.query(statement)
+            except Exception as exc:  # Index already exists: idempotent by design.
+                if "already" not in str(exc).lower() and "exist" not in str(exc).lower():
+                    raise
+
+    @staticmethod
+    def _create_document(graph, doc):
+        graph.query("""CREATE (d:Document {id:$id, kind:$kind, title:$title, body:$body,
+created:$created, origin:$origin, episode_id:$episode_id})
+WITH d OPTIONAL MATCH (p:Person {id:$author})
+FOREACH (_ IN CASE WHEN p IS NULL THEN [] ELSE [1] END | CREATE (d)-[:AUTHORED_BY]->(p))
+WITH d UNWIND $about AS aid MATCH (a:Asset {id:aid}) CREATE (d)-[:ABOUT]->(a)""",
+            {"id":doc["id"], "kind":doc["kind"], "title":doc["title"], "body":doc["body"],
+             "created":doc.get("created", ""), "origin":doc.get("origin", "seeded"),
+             "episode_id":doc.get("episode_id", ""), "author":doc.get("author") or "",
+             "about":doc.get("about", [])})
+
+    # ------------------------------------------------------------------
+    # Native FalkorDB graph algorithms used as agent tools.
+    # ------------------------------------------------------------------
+    def min_cut(self, tenant, vulnerable, target):
+        """Menger bound via algo.maxFlow: fewest pivot cuts that separate the
+        compromised asset from the target, plus one concrete minimum cut."""
+        g, _ = self.graphs(tenant)
+        if vulnerable == target:
+            return {"max_flow": 0, "cut_edges": [], "algorithm": "algo.maxFlow"}
+        rows = g.ro_query("""MATCH (s:Asset {id:$vulnerable}), (t:Asset {id:$target})
+CALL algo.maxFlow({sourceNodes:[s], targetNodes:[t], capacityProperty:'cap',
+                   nodeLabels:['Asset'], relationshipTypes:['CAN_PIVOT']})
+YIELD edges, edgeFlows, maxFlow
+RETURN [e IN edges | e.edge_id], edgeFlows, maxFlow""",
+            {"vulnerable":vulnerable, "target":target}).result_set
+        if not rows:
+            return {"max_flow": 0, "cut_edges": [], "algorithm": "algo.maxFlow"}
+        edge_ids, flows, max_flow = rows[0]
+        flow = dict(zip(edge_ids or [], flows or []))
+        pivots = g.ro_query("""MATCH (a:Asset)-[r:CAN_PIVOT]->(b:Asset)
+RETURN r.edge_id, a.id, b.id, coalesce(r.cap, 1)""").result_set
+        # Residual reachability from the source identifies the source side of
+        # a minimum cut; saturated edges leaving it form the cut itself.
+        residual = {}
+        for eid, a, b, cap in pivots:
+            used = flow.get(eid, 0)
+            if used < cap:
+                residual.setdefault(a, set()).add(b)
+            if used > 0:
+                residual.setdefault(b, set()).add(a)
+        seen, stack = {vulnerable}, [vulnerable]
+        while stack:
+            for nxt in residual.get(stack.pop(), ()):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        cut = sorted(eid for eid, a, b, _ in pivots if a in seen and b not in seen)
+        return {"max_flow": int(max_flow or 0), "cut_edges": cut, "algorithm": "algo.maxFlow"}
+
+    def chokepoints(self, tenant, source=None, target=None, limit=5):
+        """Rank assets by the share of entry->target attack routes they sit on
+        (deterministic Cypher path counting), with seeded algo.betweenness on
+        the CAN_PIVOT subgraph as a secondary structural signal."""
+        g, _ = self.graphs(tenant)
+        if source is None or target is None:
+            scene = self.graph_scene(tenant)
+            source, target = source or scene["source"], target or scene["target"]
+        rows = g.ro_query("""MATCH p=(:Asset {id:$source})-[:CAN_PIVOT*1..7]->(:Asset {id:$target})
+WITH p LIMIT 257
+WITH collect(p) AS paths
+WITH paths, size(paths) AS total
+UNWIND paths AS p
+UNWIND nodes(p)[1..-1] AS n
+RETURN n.id, n.kind, count(*) AS routes, total
+ORDER BY routes DESC, n.id LIMIT $limit""",
+            {"source":source, "target":target, "limit":int(limit)}).result_set
+        between = {r[0]: round(float(r[1]), 3) for r in g.ro_query(
+            """CALL algo.betweenness({nodeLabels:['Asset'], relationshipTypes:['CAN_PIVOT'],
+samplingSize:4096, samplingSeed:42}) YIELD node, score RETURN node.id, score""").result_set}
+        return [{"asset_id":r[0], "kind":r[1], "routes":r[2], "total_routes":r[3],
+                 "route_share":round(r[2] / r[3], 3) if r[3] else 0,
+                 "betweenness":between.get(r[0], 0.0)} for r in rows]
+
+    def blast_radius(self, tenant, asset_id):
+        """Customer flows that transitively depend on an asset (reverse DEPENDS_ON)."""
+        g, _ = self.graphs(tenant)
+        rows = g.ro_query("""MATCH (f:Asset {kind:'business_flow'})-[:DEPENDS_ON*1..7]->(a:Asset {id:$id})
+RETURN DISTINCT f.id, coalesce(f.value, 0) ORDER BY f.id""", {"id":asset_id}).result_set
+        return [{"flow":r[0], "value":r[1]} for r in rows]
+
+    def stats(self, tenant):
+        topology, memory = self.graphs(tenant)
+        names = set(self.db.list_graphs())
+        def count(graph, name, query):
+            return graph.ro_query(query).result_set[0][0] if name in names else 0
+        t, m = f"maelin_{tenant}_topology", f"maelin_{tenant}_memory"
+        return {
+            "topology_nodes": count(topology, t, "MATCH (n) RETURN count(n)"),
+            "topology_edges": count(topology, t, "MATCH ()-[r]->() RETURN count(r)"),
+            "memory_nodes": count(memory, m, "MATCH (n) RETURN count(n)"),
+            "memory_edges": count(memory, m, "MATCH ()-[r]->() RETURN count(r)"),
+            "sessions": count(memory, m, "MATCH (s:Session) RETURN count(s)"),
+            "episodes": count(memory, m, "MATCH (e:Episode) RETURN count(e)"),
+        }
