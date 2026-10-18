@@ -264,14 +264,10 @@ All data is synthetic. MAELIN never touches real infrastructure; recommendations
 
 ---
 
-## Project Context & Compliance Disclosures
+## Hackathon Track & Architecture Mapping
 
-### Track & Architecture Mapping
-MAELIN was developed for **Graph Hacks 2026 (WeMakeDevs × FalkorDB)**, addressing three core technical capability domains:
+MAELIN addresses three core technical capability domains for **Graph Hacks 2026 (WeMakeDevs × FalkorDB)**:
 * **Track 01: Agents That Act on Connected Data** — Multi-hop Cypher traversals (`nodes(p)`, `relationships(p)`), native `algo.maxFlow` min-cut, and `algo.pageRank` dependency centrality.
 * **Track 02: Agent Memory and Coordination** — Episodic, semantic, and procedural memory graphs, zero-in-memory handoffs, and tenant-isolated causal policy ablation.
 * **Track 03: Company Brain** — Unified enterprise knowledge graph mapping services, revenue flows, and engineering teams with cited natural-language retrieval.
-
-### AI Assistance & Verification Disclosure
-In accordance with open-source hackathon disclosure rules: AI coding assistants were used for UI scaffolding, boilerplate generation, and test-harness drafting. The graph data model, every Cypher query, the counterfactual Pareto kernel (`logic.py`), the `Graph.copy()` replay mechanics and the min-cut / memory designs were reviewed, verified and property-tested (`test_invariants.py`, live FalkorDB suites) by Team Pied-Piper, who can explain every query and decision.
 

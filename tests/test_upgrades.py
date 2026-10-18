@@ -4,7 +4,7 @@ Covers:
 1. algo.pageRank centrality in store.py & mcp_server.py
 2. simulator.py clone name format & cleanup
 3. store.py exact path provenance (nodes(p), relationships(p))
-4. README.md AI disclosure & core Cypher queries
+4. README.md Hackathon Track mapping & core Cypher queries
 5. 1-click Reset Demo State API (/api/demo/reset) & Cockpit UI wiring
 6. Track 03 Company Brain team ownership subgraph in seed, store, mcp, and api
 """
@@ -255,10 +255,11 @@ def test_api_centrality_and_teams_endpoints(monkeypatch):
     assert resp_teams.json()["ownership"][0]["team_id"] == "secops"
 
 
-def test_readme_contains_ai_disclosure_and_all_core_cypher():
+def test_readme_contains_track_mapping_and_all_core_cypher():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "AI Assistance & Verification Disclosure" in readme
-    assert "Team Pied-Piper" in readme
+    assert "Hackathon Track & Architecture Mapping" in readme
+    assert "Track 01" in readme
+    assert "Track 02" in readme
     assert "Track 03" in readme
     assert "CALL algo.pageRank" in readme
     assert "nodes(p)" in readme

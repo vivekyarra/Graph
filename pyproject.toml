@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [
-    { name = "Team Pied-Piper", email = "kittusontineni@gmail.com" }
+    { name = "Sai Krishna Chowdary", email = "kittusontineni@gmail.com" }
 ]
 keywords = [
     "falkordb",
