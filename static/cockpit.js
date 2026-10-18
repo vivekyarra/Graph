@@ -447,7 +447,7 @@
 
   function nodeOptions(selected, role) {
     return state.graph.nodes.filter((n) => n.kind !== 'business_flow')
-      .map((n) => `<option value="${esc(n.id)}" ${n.id === selected ? 'selected' : ''}>${esc(n.id)}</option>`).join('')
+      .map((n) => `<option value="${esc(n.id)}" ${n.id === selected ? 'selected' : ''} style="color:#0b0c10 !important;background-color:#ffffff !important;-webkit-text-fill-color:#0b0c10 !important;font-weight:500;">${esc(n.id)}</option>`).join('')
       + (role ? '' : '');
   }
 
@@ -463,9 +463,9 @@
       <div class="eyebrow rise" style="--i:0">Incident<span class="line"></span>${state.drifted ? '<span class="pill warn">topology drifted</span>' : ''}</div>
       <h2 class="rise" style="--i:1">${esc(custom ? `${pick.vulnerable} compromised` : (state.scene.scenario || 'Graph incident'))}</h2>
       <div class="route-pick rise" style="--i:2">
-        <div class="pick"><label>Entry</label><select data-pick="source">${nodeOptions(pick.source)}</select></div><span class="arrow">→</span>
-        <div class="pick v"><label>Compromised</label><select data-pick="vulnerable" id="vulnerable">${nodeOptions(pick.vulnerable)}</select></div><span class="arrow">→</span>
-        <div class="pick t"><label>Target</label><select data-pick="target">${nodeOptions(pick.target)}</select></div>
+        <div class="pick"><label>Entry</label><select data-pick="source" style="color-scheme: light;">${nodeOptions(pick.source)}</select></div><span class="arrow">→</span>
+        <div class="pick v"><label>Compromised</label><select data-pick="vulnerable" id="vulnerable" style="color-scheme: light;">${nodeOptions(pick.vulnerable)}</select></div><span class="arrow">→</span>
+        <div class="pick t"><label>Target</label><select data-pick="target" style="color-scheme: light;">${nodeOptions(pick.target)}</select></div>
       </div>`;
 
     if (state.stage === 0 || !state.run) {
